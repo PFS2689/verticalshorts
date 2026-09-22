@@ -132,11 +132,12 @@ Type: filesandordirs; Name: "{app}\data\obs-plugins\obs-shorts-vertical"
 [Code]
 const
   OBS_WINDOW_CLASS = 'OBSWindowClass';
-  GENERIC_READ = $80000000;
-  GENERIC_WRITE = $40000000;
-  OPEN_EXISTING = 3;
-  FILE_ATTRIBUTE_NORMAL = $80;
-  INVALID_HANDLE_VALUE = $FFFFFFFF;
+  { Avoid Windows/Inno predefined names (FILE_ATTRIBUTE_NORMAL, etc.). }
+  WIN_GENERIC_READ = $80000000;
+  WIN_GENERIC_WRITE = $40000000;
+  WIN_OPEN_EXISTING = 3;
+  WIN_FILE_ATTRIBUTE_NORMAL = $80;
+  WIN_INVALID_HANDLE_VALUE = $FFFFFFFF;
 
 var
   GIsUpgrade: Boolean;
@@ -152,10 +153,10 @@ function CreateFileW(lpFileName: String; dwDesiredAccess, dwShareMode: Cardinal;
   hTemplateFile: Cardinal): Cardinal;
   external 'CreateFileW@kernel32.dll stdcall';
 
-function CloseHandle(hObject: Cardinal): BOOL;
+function CloseHandle(hObject: Cardinal): Boolean;
   external 'CloseHandle@kernel32.dll stdcall';
 
-function GetLastError: Cardinal;
+function WinGetLastError: Cardinal;
   external 'GetLastError@kernel32.dll stdcall';
 
 function AddBackslashIfNeeded(const Path: String): String;
@@ -435,8 +436,8 @@ begin
   if (FileName = '') or (not FileExists(FileName)) then
     exit;
   { Request exclusive read/write — fails if OBS (or anything) has the DLL loaded. }
-  H := CreateFileW(FileName, GENERIC_READ or GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-  if H = INVALID_HANDLE_VALUE then
+  H := CreateFileW(FileName, WIN_GENERIC_READ or WIN_GENERIC_WRITE, 0, 0, WIN_OPEN_EXISTING, WIN_FILE_ATTRIBUTE_NORMAL, 0);
+  if H = WIN_INVALID_HANDLE_VALUE then
     Result := True
   else
     CloseHandle(H);
@@ -553,7 +554,7 @@ begin
   P := ExpandConstant('{app}\obs-plugins\64bit\obs-shorts-vertical.pdb');
   if FileExists(P) then begin
     if not DeleteFile(P) then
-      AppendInstallLog('WARNING: could not delete obsolete PDB: ' + P + ' err=' + IntToStr(GetLastError))
+      AppendInstallLog('WARNING: could not delete obsolete PDB: ' + P + ' err=' + IntToStr(WinGetLastError))
     else
       AppendInstallLog('Removed obsolete PDB: ' + P);
   end;
@@ -575,7 +576,7 @@ begin
   P := ExpandConstant('{app}\bin\64bit\obs-shorts-vertical.dll');
   if FileExists(P) then begin
     if not DeleteFile(P) then
-      AppendInstallLog('WARNING: could not delete obsolete DLL copy: ' + P + ' err=' + IntToStr(GetLastError))
+      AppendInstallLog('WARNING: could not delete obsolete DLL copy: ' + P + ' err=' + IntToStr(WinGetLastError))
     else
       AppendInstallLog('Removed obsolete DLL copy: ' + P);
   end;
