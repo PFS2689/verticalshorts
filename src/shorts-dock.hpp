@@ -237,13 +237,20 @@ private:
 	void EmitSourceUiChanged();
 	obs_source_t *EnsureVerticalTransitionSource(const QString &name);
 	obs_sceneitem_t *AddSourceToActiveScene(obs_source_t *source, bool fitIfSized);
-	/* Camera-sharing: create or reuse a Video Capture Device without a second HW open. */
+	/* Camera-sharing: reuse an existing Video Capture Device (no second HW open). */
 	void CreateOrShareCaptureSource(const std::string &typeId, const QString &label);
 	void WatchCaptureSourceForShare(obs_source_t *created);
 	void ResolveSharedCapture(OBSSource created);
 	void RemoveVerticalItemsForSource(obs_source_t *source);
 	bool TryShareCaptureFromSettings(const char *typeId, obs_data_t *settings, const char *logReason);
 	void NotifySharedCameraFeed();
+	void InstallCaptureSourceSignals();
+	void UninstallCaptureSourceSignals();
+	void OnObsCaptureSourceCreated(obs_source_t *source);
+	void OnObsCaptureSourceRemoved(obs_source_t *source);
+	static void OnSourceCreateSignal(void *data, calldata_t *cd);
+	static void OnSourceRemoveSignal(void *data, calldata_t *cd);
+	static void OnSourceDestroySignal(void *data, calldata_t *cd);
 
 	std::unique_ptr<OBSEventFilter> BuildEventFilter();
 	bool HandlePreviewEvent(QObject *obj, QEvent *event);
@@ -318,6 +325,7 @@ private:
 	bool loadingSettings = false;
 	bool shuttingDown = false;
 	bool sharedCameraNoticeShown = false;
+	bool captureSignalsInstalled = false;
 	/* Config schema tracking (independent from PLUGIN_VERSION). */
 	int loadedConfigSchema = 0;
 	bool configSchemaTooNew = false;

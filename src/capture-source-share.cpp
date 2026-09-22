@@ -126,7 +126,7 @@ obs_source_t *FindExistingCaptureByDeviceKey(const std::string &deviceKey, obs_s
 	obs_enum_sources(
 		[](void *param, obs_source_t *source) -> bool {
 			auto *c = static_cast<Ctx *>(param);
-			if (!source || source == c->exclude)
+			if (!source || source == c->exclude || obs_source_removed(source))
 				return true;
 			if (!IsVideoCaptureSourceId(obs_source_get_id(source)))
 				return true;
@@ -147,7 +147,9 @@ std::vector<CaptureSourceInfo> EnumerateCaptureSources()
 	obs_enum_sources(
 		[](void *param, obs_source_t *source) -> bool {
 			auto *list = static_cast<std::vector<CaptureSourceInfo> *>(param);
-			if (!source || !IsVideoCaptureSourceId(obs_source_get_id(source)))
+			if (!source || obs_source_removed(source))
+				return true;
+			if (!IsVideoCaptureSourceId(obs_source_get_id(source)))
 				return true;
 			CaptureSourceInfo info;
 			info.source = OBSSource(source);

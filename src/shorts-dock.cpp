@@ -418,6 +418,7 @@ ShortsDock::ShortsDock(QWidget *parent) : QFrame(parent)
 		automation->ApplySettings(settings);
 
 	obs_frontend_add_event_callback(FrontendEvent, this);
+	InstallCaptureSourceSignals();
 	RegisterHotkeys();
 
 	RefreshVerticalWorkspace(true);
@@ -429,6 +430,7 @@ ShortsDock::ShortsDock(QWidget *parent) : QFrame(parent)
 
 ShortsDock::~ShortsDock()
 {
+	UninstallCaptureSourceSignals();
 	obs_frontend_remove_event_callback(FrontendEvent, this);
 	UnregisterHotkeys();
 	clearing = true;
@@ -1282,7 +1284,7 @@ void ShortsDock::ShowAddSourceMenu(QWidget *button)
 
 	QMenu menu(button ? button : this);
 
-	/* --- Share Existing Camera (preferred path; one HW capture session) --- */
+	/* --- Shared OBS Camera (preferred): reuse Main OBS capture, never reopen HW --- */
 	const std::vector<vsp::CaptureSourceInfo> captures = vsp::EnumerateCaptureSources();
 	QMenu *shareMenu = menu.addMenu(Translate("ShareExistingCamera"));
 	shareMenu->setToolTip(Translate("ShareExistingCameraTip"));
@@ -1294,7 +1296,11 @@ void ShortsDock::ShowAddSourceMenu(QWidget *button)
 			label += QStringLiteral("  [%1×%2]").arg(cap.width).arg(cap.height);
 		else if (!cap.deviceKey.empty())
 			label += QStringLiteral("  [device]");
+		const bool already = scene && vsp::VerticalSceneHasSource(scene, cap.source);
+		if (already)
+			label += QString::fromUtf8(Translate("SharedCameraAlreadyOnScene"));
 		QAction *act = shareMenu->addAction(label);
+		act->setEnabled(!already);
 		OBSSource held = cap.source;
 		connect(act, &QAction::triggered, this, [this, held]() {
 			if (!scene || !held)
@@ -1304,13 +1310,17 @@ void ShortsDock::ShowAddSourceMenu(QWidget *button)
 							 Translate("SharedCameraAlreadyAdded"));
 				return;
 			}
+			/* obs_scene_add takes a strong ref on the existing source — no new dshow. */
 			AddSourceToActiveScene(held, true);
 			NotifySharedCameraFeed();
 			EmitSourceUiChanged();
 		});
 	}
-	if (captures.empty())
+	if (captures.empty()) {
+		QAction *emptyAct = shareMenu->addAction(Translate("NoSharedCameras"));
+		emptyAct->setEnabled(false);
 		shareMenu->setEnabled(false);
+	}
 	menu.addSeparator();
 
 	/* --- Create New --- */
@@ -1576,6 +1586,8 @@ void ShortsDock::CreateOrShareCaptureSource(const std::string &typeId, const QSt
 			peers.push_back(cap);
 	}
 
+	/* Prefer Shared OBS Camera whenever Main OBS already has a capture peer.
+	 * Do NOT offer a second hardware open for an already-active camera. */
 	if (!peers.empty()) {
 		QDialog dlg(this);
 		dlg.setWindowTitle(QString::fromUtf8(Translate("ShareCameraDialogTitle")));
@@ -1590,62 +1602,63 @@ void ShortsDock::CreateOrShareCaptureSource(const std::string &typeId, const QSt
 				row += QStringLiteral("  (%1×%2)").arg(cap.width).arg(cap.height);
 			if (!cap.deviceKey.empty())
 				row += QStringLiteral("\n  ") + QString::fromStdString(cap.deviceKey);
+			const bool already = vsp::VerticalSceneHasSource(scene, cap.source);
+			if (already)
+				row += QString::fromUtf8(Translate("SharedCameraAlreadyOnScene"));
 			auto *item = new QListWidgetItem(row, list);
+			item->setFlags(already ? (item->flags() & ~Qt::ItemIsEnabled)
+					       : (item->flags() | Qt::ItemIsEnabled | Qt::ItemIsSelectable));
 			const char *uuid = obs_source_get_uuid(cap.source);
 			item->setData(Qt::UserRole, QString::fromUtf8(uuid ? uuid : ""));
 			/* Prefer sources that already produce frames. */
-			if (cap.width > 0 && cap.height > 0 && list->currentItem() == nullptr)
+			if (!already && cap.width > 0 && cap.height > 0 && list->currentItem() == nullptr)
 				list->setCurrentItem(item);
 		}
-		if (!list->currentItem() && list->count() > 0)
-			list->setCurrentRow(0);
+		if (!list->currentItem()) {
+			for (int i = 0; i < list->count(); i++) {
+				if (list->item(i)->flags() & Qt::ItemIsEnabled) {
+					list->setCurrentRow(i);
+					break;
+				}
+			}
+		}
 		layout->addWidget(list);
-		auto *buttons = new QDialogButtonBox(&dlg);
-		QPushButton *shareBtn = buttons->addButton(QString::fromUtf8(Translate("ShareSelectedCamera")),
-							   QDialogButtonBox::AcceptRole);
-		QPushButton *createBtn = buttons->addButton(QString::fromUtf8(Translate("CreateNewCaptureSession")),
-							    QDialogButtonBox::ActionRole);
-		buttons->addButton(QDialogButtonBox::Cancel);
+		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+		buttons->button(QDialogButtonBox::Ok)->setText(QString::fromUtf8(Translate("ShareSelectedCamera")));
 		layout->addWidget(buttons);
-
-		QObject::connect(shareBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
-		bool createNew = false;
-		QObject::connect(createBtn, &QPushButton::clicked, &dlg, [&]() {
-			createNew = true;
-			dlg.done(QDialog::Accepted);
-		});
+		QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
 		QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+		QObject::connect(list, &QListWidget::itemDoubleClicked, &dlg, [&](QListWidgetItem *item) {
+			if (item && (item->flags() & Qt::ItemIsEnabled))
+				dlg.accept();
+		});
 
 		if (dlg.exec() != QDialog::Accepted)
 			return;
 
-		if (!createNew) {
-			QListWidgetItem *sel = list->currentItem();
-			if (!sel) {
-				QMessageBox::warning(this, Translate("AddSource"), Translate("CameraDeviceInUseHint"));
-				return;
-			}
-			const QString uuid = sel->data(Qt::UserRole).toString();
-			OBSSourceAutoRelease existing = uuid.isEmpty()
-								? nullptr
-								: obs_get_source_by_uuid(uuid.toUtf8().constData());
-			if (!existing) {
-				QMessageBox::warning(this, Translate("AddSource"), Translate("CameraDeviceInUseHint"));
-				return;
-			}
-			if (vsp::VerticalSceneHasSource(scene, existing)) {
-				QMessageBox::information(this, Translate("AddSource"),
-							 Translate("SharedCameraAlreadyAdded"));
-				return;
-			}
-			AddSourceToActiveScene(existing, true);
-			NotifySharedCameraFeed();
-			EmitSourceUiChanged();
+		QListWidgetItem *sel = list->currentItem();
+		if (!sel || !(sel->flags() & Qt::ItemIsEnabled)) {
+			QMessageBox::information(this, Translate("AddSource"), Translate("SharedCameraAlreadyAdded"));
 			return;
 		}
-		/* Fall through: user explicitly requested a new capture session. */
+		const QString uuid = sel->data(Qt::UserRole).toString();
+		OBSSourceAutoRelease existing =
+			uuid.isEmpty() ? nullptr : obs_get_source_by_uuid(uuid.toUtf8().constData());
+		if (!existing) {
+			QMessageBox::warning(this, Translate("AddSource"), Translate("CameraDeviceInUseHint"));
+			return;
+		}
+		if (vsp::VerticalSceneHasSource(scene, existing)) {
+			QMessageBox::information(this, Translate("AddSource"), Translate("SharedCameraAlreadyAdded"));
+			return;
+		}
+		AddSourceToActiveScene(existing, true);
+		NotifySharedCameraFeed();
+		EmitSourceUiChanged();
+		return;
 	}
 
+	/* No existing Main OBS capture of this family — first open is allowed. */
 	const QString name = UniqueSourceName(label);
 	obs_source_t *created = obs_source_create(typeId.c_str(), name.toUtf8().constData(), nullptr, nullptr);
 	if (!created) {
@@ -1662,6 +1675,165 @@ void ShortsDock::CreateOrShareCaptureSource(const std::string &typeId, const QSt
 	     "[obs-shorts-vertical] Created capture source '%s' (%s); watching for device-id share match",
 	     obs_source_get_name(created), typeId.c_str());
 	obs_source_release(created);
+	EmitSourceUiChanged();
+}
+
+void ShortsDock::InstallCaptureSourceSignals()
+{
+	if (captureSignalsInstalled)
+		return;
+	signal_handler_t *sh = obs_get_signal_handler();
+	if (!sh)
+		return;
+	signal_handler_connect(sh, "source_create", OnSourceCreateSignal, this);
+	signal_handler_connect(sh, "source_remove", OnSourceRemoveSignal, this);
+	signal_handler_connect(sh, "source_destroy", OnSourceDestroySignal, this);
+	captureSignalsInstalled = true;
+	blog(LOG_INFO, "[obs-shorts-vertical] Shared OBS Camera: watching source_create/remove/destroy");
+}
+
+void ShortsDock::UninstallCaptureSourceSignals()
+{
+	if (!captureSignalsInstalled)
+		return;
+	signal_handler_t *sh = obs_get_signal_handler();
+	if (sh) {
+		signal_handler_disconnect(sh, "source_create", OnSourceCreateSignal, this);
+		signal_handler_disconnect(sh, "source_remove", OnSourceRemoveSignal, this);
+		signal_handler_disconnect(sh, "source_destroy", OnSourceDestroySignal, this);
+	}
+	captureSignalsInstalled = false;
+}
+
+void ShortsDock::OnSourceCreateSignal(void *data, calldata_t *cd)
+{
+	auto *dock = static_cast<ShortsDock *>(data);
+	obs_source_t *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+	if (!dock || !source || dock->clearing || dock->shuttingDown)
+		return;
+	if (!vsp::IsVideoCaptureSourceId(obs_source_get_id(source)))
+		return;
+	/* Marshal to UI thread; do not retain a raw pointer across the hop. */
+	const char *uuid = obs_source_get_uuid(source);
+	const QString uuidStr = QString::fromUtf8(uuid ? uuid : "");
+	QMetaObject::invokeMethod(
+		dock,
+		[dock, uuidStr]() {
+			if (dock->clearing || dock->shuttingDown || uuidStr.isEmpty())
+				return;
+			OBSSourceAutoRelease src = obs_get_source_by_uuid(uuidStr.toUtf8().constData());
+			if (src)
+				dock->OnObsCaptureSourceCreated(src);
+		},
+		Qt::QueuedConnection);
+}
+
+void ShortsDock::OnSourceRemoveSignal(void *data, calldata_t *cd)
+{
+	auto *dock = static_cast<ShortsDock *>(data);
+	obs_source_t *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+	if (!dock || !source || dock->clearing || dock->shuttingDown)
+		return;
+	if (!vsp::IsVideoCaptureSourceId(obs_source_get_id(source)))
+		return;
+	const char *uuid = obs_source_get_uuid(source);
+	const QString uuidStr = QString::fromUtf8(uuid ? uuid : "");
+	const QString name = QString::fromUtf8(obs_source_get_name(source) ? obs_source_get_name(source) : "");
+	/* Capture a weak ref while the source is still alive in source_remove. */
+	OBSWeakSource weak = OBSGetWeakRef(source);
+	QMetaObject::invokeMethod(
+		dock,
+		[dock, uuidStr, name, weak]() {
+			if (dock->clearing || dock->shuttingDown)
+				return;
+			OBSSource src = OBSGetStrongRef(weak);
+			if (src) {
+				dock->OnObsCaptureSourceRemoved(src);
+				return;
+			}
+			/* Source already gone — still refresh UI; avoid dangling raw use. */
+			blog(LOG_INFO,
+			     "[obs-shorts-vertical] Shared OBS Camera removed (uuid=%s name=%s); refreshing UI",
+			     uuidStr.toUtf8().constData(), name.toUtf8().constData());
+			dock->stretchItem = nullptr;
+			dock->mouseDown = false;
+			dock->EmitSourceUiChanged();
+		},
+		Qt::QueuedConnection);
+}
+
+void ShortsDock::OnSourceDestroySignal(void *data, calldata_t *cd)
+{
+	auto *dock = static_cast<ShortsDock *>(data);
+	obs_source_t *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+	if (!dock || !source || dock->clearing || dock->shuttingDown)
+		return;
+	if (!vsp::IsVideoCaptureSourceId(obs_source_get_id(source)))
+		return;
+	/* source_destroy: pointer is becoming invalid — never store it. UI refresh only. */
+	QMetaObject::invokeMethod(
+		dock,
+		[dock]() {
+			if (dock->clearing || dock->shuttingDown)
+				return;
+			dock->stretchItem = nullptr;
+			dock->mouseDown = false;
+			dock->EmitSourceUiChanged();
+		},
+		Qt::QueuedConnection);
+}
+
+void ShortsDock::OnObsCaptureSourceCreated(obs_source_t *source)
+{
+	if (!source || clearing || shuttingDown)
+		return;
+	blog(LOG_INFO,
+	     "[obs-shorts-vertical] Shared OBS Camera available: '%s' (%s) key=%s size=%ux%u",
+	     obs_source_get_name(source), obs_source_get_id(source), vsp::GetCaptureDeviceKey(source).c_str(),
+	     obs_source_get_width(source), obs_source_get_height(source));
+	EmitSourceUiChanged();
+}
+
+void ShortsDock::OnObsCaptureSourceRemoved(obs_source_t *source)
+{
+	if (!source || clearing || shuttingDown)
+		return;
+
+	blog(LOG_INFO, "[obs-shorts-vertical] Shared OBS Camera removed: '%s' (%s) — cleaning vertical items",
+	     obs_source_get_name(source), obs_source_get_id(source));
+
+	/* Drop interaction state that could reference removed scene items. */
+	if (stretchItem) {
+		obs_source_t *stretchSrc = obs_sceneitem_get_source(stretchItem);
+		if (!stretchSrc || stretchSrc == source)
+			stretchItem = nullptr;
+	}
+	mouseDown = false;
+	mouseMoved = false;
+
+	/* OBS usually removes scene items on source_remove; belt-and-suspenders cleanup. */
+	for (auto it = verticalScenes.begin(); it != verticalScenes.end(); ++it) {
+		obs_scene_t *vs = it.value();
+		if (!vs)
+			continue;
+		std::vector<obs_sceneitem_t *> doomed;
+		struct Ctx {
+			obs_source_t *source;
+			std::vector<obs_sceneitem_t *> *doomed;
+		} ctx{source, &doomed};
+		obs_scene_enum_items(
+			vs,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *param) -> bool {
+				auto *c = static_cast<Ctx *>(param);
+				if (obs_sceneitem_get_source(item) == c->source)
+					c->doomed->push_back(item);
+				return true;
+			},
+			&ctx);
+		for (obs_sceneitem_t *item : doomed)
+			obs_sceneitem_remove(item);
+	}
+
 	EmitSourceUiChanged();
 }
 
@@ -2157,6 +2329,26 @@ void ShortsDock::RequestPasteSource()
 	/* Prefer sharing an existing capture by stable device id over a second open. */
 	if (TryShareCaptureFromSettings(g_sourceClipboard.id.c_str(), settings, "paste"))
 		return;
+
+	/* Video Capture Device paste with no device-key match: never open a second
+	 * session when Main OBS already has peers — route through Shared OBS Camera. */
+	if (vsp::IsVideoCaptureSourceId(g_sourceClipboard.id.c_str())) {
+		const std::string family = vsp::CaptureSourceFamily(g_sourceClipboard.id.c_str());
+		bool hasPeers = false;
+		for (const vsp::CaptureSourceInfo &cap : vsp::EnumerateCaptureSources()) {
+			if (vsp::CaptureSourceFamily(cap.typeId.c_str()) == family) {
+				hasPeers = true;
+				break;
+			}
+		}
+		if (hasPeers) {
+			const char *disp = obs_source_get_display_name(g_sourceClipboard.id.c_str());
+			CreateOrShareCaptureSource(g_sourceClipboard.id,
+						  disp && *disp ? QString::fromUtf8(disp)
+								: QStringLiteral("Video Capture Device"));
+			return;
+		}
+	}
 
 	const char *display = obs_source_get_display_name(g_sourceClipboard.id.c_str());
 	const QString base = display && *display ? QString::fromUtf8(display) : QStringLiteral("Source");

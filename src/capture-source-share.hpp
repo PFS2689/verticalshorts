@@ -5,9 +5,10 @@
 #include <string>
 #include <vector>
 
-/* Camera-sharing backend: match physical capture devices by stable IDs and
- * reuse the existing obs_source_t so Main OBS and Vertical Shorts share one
- * capture session while keeping independent scene-item transforms. */
+/* Shared OBS Camera helpers: discover Main OBS Video Capture Device sources by
+ * registered type ids / stable device keys, and reuse the same obs_source_t so
+ * Main OBS and Vertical Shorts share one capture session while keeping
+ * independent scene-item transforms. */
 
 namespace vsp {
 
