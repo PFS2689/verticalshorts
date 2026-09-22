@@ -105,7 +105,7 @@ SelectDirBrowseLabel=Select the OBS Studio folder, then click Next.
 ; replacesameversion: also replace when PE versions match
 Source: "{#SourceDir}\obs-shorts-vertical\bin\64bit\obs-shorts-vertical.dll"; \
     DestDir: "{app}\obs-plugins\64bit"; \
-    Flags: ignoreversion replacesameversion uninsrestartdelete
+    Flags: ignoreversion uninsrestartdelete
 ; Resources → OBS data\obs-plugins\obs-shorts-vertical\
 Source: "{#SourceDir}\obs-shorts-vertical\data\*"; \
     DestDir: "{app}\data\obs-plugins\obs-shorts-vertical"; \

@@ -212,6 +212,17 @@ jobs:
           }
           Write-Host 'Plugin layout audit passed'
 
+      # Upload known-good Release payload BEFORE packaging so manual-install
+      # recovery can proceed even if the installer step fails.
+      - name: Upload Release plugin payload (manual install)
+        uses: actions/upload-artifact@v4
+        with:
+          name: obs-shorts-vertical-${{ steps.setup.outputs.pluginVersion }}-release-x64-dll
+          path: |
+            ${{ github.workspace }}/release/Release/obs-shorts-vertical/
+            ${{ github.workspace }}/release/Release/INSTALL.txt
+          if-no-files-found: error
+
       - name: Sign plugin DLL (Azure Artifact Signing)
         if: github.ref_type == 'tag' && steps.creds.outputs.has_azure == 'true'
         uses: azure/artifact-signing-action@v2
