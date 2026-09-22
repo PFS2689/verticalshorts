@@ -42,7 +42,7 @@ jobs:
           "pluginVersion=$($BuildSpec.version)" >> $env:GITHUB_OUTPUT
           "commitHash=$($env:GITHUB_SHA.Substring(0,9))" >> $env:GITHUB_OUTPUT
           $ver = [string]$BuildSpec.version
-          $setupName = "Vertical Shorts Plugin $ver Setup.exe"
+          $setupName = "Vertical-Shorts-Plugin-$ver-Setup.exe"
           "setupFileName=$setupName" >> $env:GITHUB_OUTPUT
           Write-Host "Installer filename: $setupName"
 
@@ -88,20 +88,19 @@ jobs:
           & $iscc /? | Select-Object -First 3
           Write-Host "ISCC: $iscc"
 
-      # 1) Build plugin
+      # 1) Build plugin (always Release x64 — shipping installer payload)
       - name: Build Plugin
         uses: ./.github/actions/build-plugin
         with:
           target: x64
-          config: ${{ github.ref_type == 'tag' && 'Release' || 'RelWithDebInfo' }}
+          config: Release
 
       # 2) Verify plugin DLL + resources before any packaging
       - name: Audit OBS module exports
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $config = if ('${{ github.ref_type }}' -eq 'tag') { 'Release' } else { 'RelWithDebInfo' }
-          $dll = Join-Path $env:GITHUB_WORKSPACE "release\$config\obs-shorts-vertical\bin\64bit\obs-shorts-vertical.dll"
+          $dll = Join-Path $env:GITHUB_WORKSPACE "release\Release\obs-shorts-vertical\bin\64bit\obs-shorts-vertical.dll"
           if (-not (Test-Path $dll)) { throw "Missing plugin DLL for export audit: $dll" }
           $dumpbin = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
             -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
@@ -125,12 +124,78 @@ jobs:
           }
           Write-Host 'OBS module export audit passed'
 
+      - name: Audit DLL runtime dependents (clean-machine)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dll = Join-Path $env:GITHUB_WORKSPACE "release\Release\obs-shorts-vertical\bin\64bit\obs-shorts-vertical.dll"
+          if (-not (Test-Path $dll)) { throw "Missing plugin DLL for dependents audit: $dll" }
+          $dumpbin = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -find '**/dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe not found' }
+
+          # Machine type: 0x8664 = AMD64
+          $headers = & $dumpbin /HEADERS $dll | Out-String
+          Write-Host $headers
+          if ($headers -notmatch '8664 machine \(x64\)') {
+            throw 'Plugin DLL is not x64 (AMD64). Refusing to package a non-x64 binary.'
+          }
+
+          $deps = & $dumpbin /DEPENDENTS $dll | Out-String
+          Write-Host $deps
+
+          # Forbidden: debug CRT, Qt5, or other deps that would silently break on a clean OBS PC.
+          $forbidden = @(
+            'Qt5', 'MSVCR1', 'MSVCP1[0-2]', 'ucrtbased', 'VCRUNTIME140D', 'MSVCP140D',
+            'd3dcompiler_43', 'concrt140d'
+          )
+
+          # Allowed: Windows system / UCRT / VCRedist shipped with OBS, plus OBS + Qt6 that OBS already loads.
+          $allowedExact = [System.Collections.Generic.HashSet[string]]::new(
+            [StringComparer]::OrdinalIgnoreCase
+          )
+          @(
+            'KERNEL32.dll','USER32.dll','GDI32.dll','ADVAPI32.dll','SHELL32.dll','SHLWAPI.dll',
+            'OLE32.dll','OLEAUT32.dll','COMDLG32.dll','COMCTL32.dll','UUID.dll','WS2_32.dll',
+            'WINMM.dll','IMM32.dll','VERSION.dll','CRYPT32.dll','BCRYPT.dll','NSI.dll','NTDLL.dll',
+            'SETUPAPI.dll','UXTHEME.dll','DWMAPI.dll','IPHLPAPI.dll','DNSAPI.dll','SECUR32.dll',
+            'NETAPI32.dll','WTSAPI32.dll','USERENV.dll','PROPSYS.dll','WINTRUST.dll','DBGHELP.dll',
+            'MSVCP140.dll','VCRUNTIME140.dll','VCRUNTIME140_1.dll','UCRTBASE.dll',
+            'obs.dll','obs-frontend-api.dll',
+            'Qt6Core.dll','Qt6Gui.dll','Qt6Widgets.dll','Qt6Svg.dll','Qt6Network.dll','Qt6Xml.dll'
+          ) | ForEach-Object { [void]$allowedExact.Add($_) }
+
+          $depLines = ($deps -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object {
+            $_ -match '\.dll$' -and $_ -notmatch 'Dump of file|File Type|Image has|Summary'
+          }
+          $unexpected = @()
+          foreach ($name in $depLines) {
+            Write-Host "Dependent: $name"
+            foreach ($bad in $forbidden) {
+              if ($name -match $bad) {
+                throw "Forbidden/dev-only dependent detected: $name"
+              }
+            }
+            if ($name -like 'api-ms-win-*') { continue }
+            if ($allowedExact.Contains($name)) { continue }
+            $unexpected += $name
+          }
+          if ($unexpected.Count -gt 0) {
+            $unexpected | ForEach-Object { Write-Host "UNEXPECTED DEPENDENT: $_" }
+            throw @"
+Unexpected runtime dependent(s) found. These are not OBS/Qt6/system DLLs and are NOT packaged by this installer.
+Either justify them (OBS already provides them) or ship a fix — do not assume they exist on a clean church/office PC.
+$($unexpected -join ', ')
+"@
+          }
+          Write-Host 'DLL dependents audit passed (x64; OBS/Qt6/system only; no nested runtimes to ship)'
+
       - name: Prepare INSTALL.txt and audit plugin layout
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $config = if ('${{ github.ref_type }}' -eq 'tag') { 'Release' } else { 'RelWithDebInfo' }
-          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "release\$config"
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "release\Release"
           $root = Join-Path $releaseDir 'obs-shorts-vertical'
           if (Test-Path "$env:GITHUB_WORKSPACE\INSTALL-WINDOWS.txt") {
             Copy-Item -Force "$env:GITHUB_WORKSPACE\INSTALL-WINDOWS.txt" (Join-Path $releaseDir 'INSTALL.txt')
@@ -187,7 +252,7 @@ jobs:
         uses: ./.github/actions/package-plugin
         with:
           target: x64
-          config: ${{ github.ref_type == 'tag' && 'Release' || 'RelWithDebInfo' }}
+          config: Release
           package: 'true'
 
       - name: Verify Inno Setup installer output

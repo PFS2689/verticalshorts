@@ -63,10 +63,10 @@ jobs:
               exit 1
             fi
           fi
-          # Exact local/artifact installer basename (spaces). GitHub download URLs may
-          # normalize spaces to dots (Vertical.Shorts.Plugin.1.0.5.Setup.exe).
-          echo "setup_name=Vertical Shorts Plugin ${VERSION} Setup.exe" >> "$GITHUB_OUTPUT"
-          echo "setup_asset_url=Vertical.Shorts.Plugin.${VERSION}.Setup.exe" >> "$GITHUB_OUTPUT"
+          # Hyphenated installer name for clean download URLs:
+          #   Vertical-Shorts-Plugin-1.0.6-Setup.exe
+          echo "setup_name=Vertical-Shorts-Plugin-${VERSION}-Setup.exe" >> "$GITHUB_OUTPUT"
+          echo "setup_asset_url=Vertical-Shorts-Plugin-${VERSION}-Setup.exe" >> "$GITHUB_OUTPUT"
 
       - name: Download artifacts
         if: steps.check.outputs.valid == 'true'
@@ -91,8 +91,8 @@ jobs:
           if [[ -f "dist/${SETUP_NAME}" ]]; then
             cp "dist/${SETUP_NAME}" "release-assets/${SETUP_NAME}"
           else
-            # Fallback: any matching Setup.exe produced by packaging
-            found="$(find dist -maxdepth 1 -type f -name 'Vertical Shorts Plugin * Setup.exe' | head -n1 || true)"
+            # Fallback: hyphenated or legacy spaced Setup.exe from packaging
+            found="$(find dist -maxdepth 1 -type f \( -name 'Vertical-Shorts-Plugin-*-Setup.exe' -o -name 'Vertical Shorts Plugin * Setup.exe' \) | head -n1 || true)"
             if [[ -n "${found}" ]]; then
               cp "${found}" "release-assets/${SETUP_NAME}"
             else

@@ -198,11 +198,11 @@ function Package {
     $DisplayName = if ($BuildSpec.displayName) { [string]$BuildSpec.displayName } else { 'Vertical Shorts Plugin' }
 
     # Official public artifact names:
-    #   Vertical-Shorts-Plugin-1.0.5.zip  (hyphenated for GitHub Release URLs)
-    #   Vertical Shorts Plugin 1.0.5 Setup.exe  (exact product installer name)
+    #   Vertical-Shorts-Plugin-1.0.6.zip
+    #   Vertical-Shorts-Plugin-1.0.6-Setup.exe
     $OutputName = "${ProductName}-${ProductVersion}-windows-${Target}"
     $OfficialZipBase = "Vertical-Shorts-Plugin-${ProductVersion}"
-    $SetupBaseName = "Vertical Shorts Plugin ${ProductVersion} Setup"
+    $SetupBaseName = "Vertical-Shorts-Plugin-${ProductVersion}-Setup"
 
     $ReleaseDir = "${ProjectRoot}/release/${Configuration}"
     $StageRoot = "${ProjectRoot}/release/staging"
