@@ -1959,27 +1959,92 @@ void ShortsDock::ApplyVerticalFitMode(obs_sceneitem_t *item, VerticalFitMode mod
 	if (persist)
 		StoreFitMode(item, mode);
 
-	/* Clear manual crop — Fill/Fit use bounds cropping, not scene-item crop. */
-	obs_sceneitem_crop zeroCrop = {0, 0, 0, 0};
-	obs_sceneitem_set_crop(item, &zeroCrop);
+	blog(LOG_INFO,
+	     "[obs-shorts-vertical] Fit begin mode=%d source='%s' sourceSize=%ux%u canvas=%ux%u fillPos=%d",
+	     (int)mode, source ? obs_source_get_name(source) : "?", sw, sh, (uint32_t)canvasW, (uint32_t)canvasH,
+	     (int)fillPos);
 
 	obs_transform_info info{};
 	obs_sceneitem_get_info2(item, &info);
 	info.rot = 0.0f;
-	vec2_set(&info.scale, 1.0f, 1.0f);
+
+	obs_sceneitem_crop crop = {0, 0, 0, 0};
 
 	switch (mode) {
-	case VerticalFitMode::Fill:
-		/* Cover the vertical canvas, preserve AR, crop overflow (no stretch). */
-		vec2_set(&info.pos, 0.0f, 0.0f);
-		info.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
-		vec2_set(&info.bounds, canvasW, canvasH);
-		info.bounds_type = OBS_BOUNDS_SCALE_OUTER;
-		info.bounds_alignment = FillBoundsAlignment(fillPos);
-		info.crop_to_bounds = true;
+	case VerticalFitMode::Fill: {
+		/* COVER / fill-and-crop: scale to cover the whole vertical canvas, preserve AR,
+		 * center (or left/right), crop overflow. No letterbox / pillarbox / stretch.
+		 * Independent vertical scene-item transform — does not touch Main OBS items. */
+		if (sw > 0 && sh > 0) {
+			const float srcW = float(sw);
+			const float srcH = float(sh);
+			const float canvasAspect = canvasW / canvasH;
+			const float srcAspect = srcW / srcH;
+
+			float coverScale;
+			if (srcAspect > canvasAspect) {
+				/* Source wider than canvas — scale by height, crop left/right. */
+				coverScale = canvasH / srcH;
+				const float visibleSrcW = canvasW / coverScale;
+				const int visiblePx = std::max(1, (int)std::lround(visibleSrcW));
+				const int totalCropX = std::max(0, (int)sw - visiblePx);
+				int leftCrop = totalCropX / 2;
+				int rightCrop = totalCropX - leftCrop;
+				if (fillPos == VerticalFillPosition::Left) {
+					leftCrop = 0;
+					rightCrop = totalCropX;
+				} else if (fillPos == VerticalFillPosition::Right) {
+					leftCrop = totalCropX;
+					rightCrop = 0;
+				}
+				crop.left = leftCrop;
+				crop.right = rightCrop;
+			} else {
+				/* Source taller/narrower — scale by width, crop top/bottom. */
+				coverScale = canvasW / srcW;
+				const float visibleSrcH = canvasH / coverScale;
+				const int visiblePx = std::max(1, (int)std::lround(visibleSrcH));
+				const int totalCropY = std::max(0, (int)sh - visiblePx);
+				const int topCrop = totalCropY / 2;
+				crop.top = topCrop;
+				crop.bottom = totalCropY - topCrop;
+			}
+
+			const float remainW = float(std::max(1, (int)sw - crop.left - crop.right));
+			const float remainH = float(std::max(1, (int)sh - crop.top - crop.bottom));
+
+			vec2_set(&info.scale, coverScale, coverScale);
+			vec2_set(&info.pos, 0.0f, 0.0f);
+			info.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
+			vec2_set(&info.bounds, 0.0f, 0.0f);
+			info.bounds_type = OBS_BOUNDS_NONE;
+			info.bounds_alignment = OBS_ALIGN_CENTER;
+			info.crop_to_bounds = false;
+
+			blog(LOG_INFO,
+			     "[obs-shorts-vertical] Cover fill: coverScale=%.6f crop=L%u R%u T%u B%u "
+			     "remain=%.1fx%.1f mapped=%.1fx%.1f (canvas=%gx%g)",
+			     coverScale, crop.left, crop.right, crop.top, crop.bottom, remainW, remainH,
+			     remainW * coverScale, remainH * coverScale, canvasW, canvasH);
+		} else {
+			/* Size not ready yet — native SCALE_OUTER cover until deferred fit retries. */
+			vec2_set(&info.scale, 1.0f, 1.0f);
+			vec2_set(&info.pos, 0.0f, 0.0f);
+			info.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
+			vec2_set(&info.bounds, canvasW, canvasH);
+			info.bounds_type = OBS_BOUNDS_SCALE_OUTER;
+			info.bounds_alignment = FillBoundsAlignment(fillPos);
+			info.crop_to_bounds = true;
+			blog(LOG_INFO,
+			     "[obs-shorts-vertical] Cover fill deferred: source size unknown, using "
+			     "OBS_BOUNDS_SCALE_OUTER + crop_to_bounds on %gx%g",
+			     canvasW, canvasH);
+		}
 		break;
+	}
 	case VerticalFitMode::FitInside:
-		/* Entire source visible; may letterbox. */
+		/* Entire source visible; may letterbox (contain). */
+		vec2_set(&info.scale, 1.0f, 1.0f);
 		vec2_set(&info.pos, 0.0f, 0.0f);
 		info.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
 		vec2_set(&info.bounds, canvasW, canvasH);
@@ -1988,6 +2053,7 @@ void ShortsDock::ApplyVerticalFitMode(obs_sceneitem_t *item, VerticalFitMode mod
 		info.crop_to_bounds = false;
 		break;
 	case VerticalFitMode::Original:
+		vec2_set(&info.scale, 1.0f, 1.0f);
 		vec2_set(&info.bounds, 0.0f, 0.0f);
 		info.bounds_type = OBS_BOUNDS_NONE;
 		info.bounds_alignment = OBS_ALIGN_CENTER;
@@ -1997,6 +2063,7 @@ void ShortsDock::ApplyVerticalFitMode(obs_sceneitem_t *item, VerticalFitMode mod
 		break;
 	case VerticalFitMode::Stretch:
 		/* Manual-only distorting fill. Never used as automatic default. */
+		vec2_set(&info.scale, 1.0f, 1.0f);
 		vec2_set(&info.pos, 0.0f, 0.0f);
 		info.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
 		vec2_set(&info.bounds, canvasW, canvasH);
@@ -2006,13 +2073,24 @@ void ShortsDock::ApplyVerticalFitMode(obs_sceneitem_t *item, VerticalFitMode mod
 		break;
 	}
 
+	obs_sceneitem_set_crop(item, &crop);
 	obs_sceneitem_set_info2(item, &info);
+	if (info.bounds_type == OBS_BOUNDS_SCALE_OUTER)
+		obs_sceneitem_set_bounds_crop(item, true);
 
+	/* Read back actual transform for diagnostics (vertical item only). */
+	obs_transform_info applied{};
+	obs_sceneitem_get_info2(item, &applied);
+	obs_sceneitem_crop appliedCrop{};
+	obs_sceneitem_get_crop(item, &appliedCrop);
 	blog(LOG_INFO,
-	     "[obs-shorts-vertical] Applied fit mode=%d fill_pos=%d to '%s' source=%ux%u canvas=%ux%u "
-	     "bounds_type=%d crop_to_bounds=%d",
-	     (int)mode, (int)fillPos, source ? obs_source_get_name(source) : "?", sw, sh, (uint32_t)canvasW,
-	     (uint32_t)canvasH, (int)info.bounds_type, (int)info.crop_to_bounds);
+	     "[obs-shorts-vertical] Fit applied mode=%d '%s' source=%ux%u canvas=%ux%u "
+	     "pos=(%.1f,%.1f) scale=(%.4f,%.4f) bounds_type=%d bounds=(%.1f,%.1f) "
+	     "crop_to_bounds=%d crop=L%u R%u T%u B%u",
+	     (int)mode, source ? obs_source_get_name(source) : "?", sw, sh, (uint32_t)canvasW, (uint32_t)canvasH,
+	     applied.pos.x, applied.pos.y, applied.scale.x, applied.scale.y, (int)applied.bounds_type, applied.bounds.x,
+	     applied.bounds.y, (int)applied.crop_to_bounds, appliedCrop.left, appliedCrop.right, appliedCrop.top,
+	     appliedCrop.bottom);
 }
 
 void ShortsDock::FitSceneItemToCanvas(obs_sceneitem_t *item)
@@ -2484,8 +2562,8 @@ bool ShortsDock::HasTransformClipboard() const
 
 void ShortsDock::RequestFitToScreen()
 {
-	/* Legacy name — now means Fit Inside (show entire source). */
-	RequestFitInsideVerticalCanvas();
+	/* "Fit to Vertical Canvas" for cameras/video = COVER fill (no letterboxing). */
+	RequestFillVerticalCanvas();
 }
 
 void ShortsDock::RequestFillVerticalCanvas()
@@ -2587,6 +2665,8 @@ void ShortsDock::AppendTransformFitMenu(QMenu *transformMenu)
 		act->setChecked(curMode == mode);
 		return act;
 	};
+	/* Fit to Vertical Canvas = cover fill for cameras (no blank bars). */
+	addMode("FitToScreen", VerticalFitMode::Fill, &ShortsDock::RequestFitToScreen);
 	addMode("FillVerticalCanvas", VerticalFitMode::Fill, &ShortsDock::RequestFillVerticalCanvas);
 	addMode("FitInsideVerticalCanvas", VerticalFitMode::FitInside, &ShortsDock::RequestFitInsideVerticalCanvas);
 	addMode("OriginalSize", VerticalFitMode::Original, &ShortsDock::RequestOriginalSize);
