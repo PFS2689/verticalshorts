@@ -118,7 +118,7 @@ public:
 	void RequestSelectSource(qint64 itemId);
 	void PopulateSourcesList(QListWidget *list);
 
-	void RequestFitToScreen(); /* Fit Inside Vertical Canvas (legacy name) */
+	void RequestFitToScreen(); /* Fit to Vertical Canvas = cover/fill for cameras */
 	void RequestFillVerticalCanvas();
 	void RequestFitInsideVerticalCanvas();
 	void RequestOriginalSize();
