@@ -6,7 +6,7 @@ in-place upgrade identity, hardened for clean-machine OBS installs.
 ## Final installer name
 
 ```
-Vertical-Shorts-Plugin-1.0.6-Setup.exe
+Vertical-Shorts-Plugin-1.0.7-Setup.exe
 ```
 
 (Product name and version come from `buildspec.json`.)
@@ -42,6 +42,15 @@ Administrator (UAC) is required.
 This plugin links against **OBS-provided** `libobs` / `obs-frontend-api` / Qt6.
 The installer must **not** bundle nested Qt or `obs.dll` copies.
 The Visual C++ runtime is provided by OBS Studio itself.
+
+### OBS version compatibility
+
+Vertical Shorts requires **OBS Studio 32.0+ (x64)**.
+
+The Windows build compiles against OBS 32.2.1 headers, but `obs_module_ver()`
+advertises **API 32.0.0** so OBS 32.0 and 32.1 will load the module. OBS rejects
+plugins that advertise a newer major.minor than the host (that was the 1.0.6
+"Plugin Load Error" on older 32.x installs).
 
 ## Install log
 

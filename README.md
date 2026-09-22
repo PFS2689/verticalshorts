@@ -1,13 +1,13 @@
 # Vertical Shorts Plugin for OBS Studio
 
-**Version 1.0.6** — Windows
+**Version 1.0.7** — Windows
 
 Professional Vertical Streaming Plugin for OBS Studio — vertical production dock for Shorts, TikTok, Reels, and Twitch.
 
 ## Download
 
-- **Setup.exe:** [Vertical-Shorts-Plugin-1.0.6-Setup.exe](https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.6-Setup.exe)
-- **Zip:** [Vertical-Shorts-Plugin-1.0.6.zip](https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.6.zip)
+- **Setup.exe:** [Vertical-Shorts-Plugin-1.0.7-Setup.exe](https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.7-Setup.exe)
+- **Zip:** [Vertical-Shorts-Plugin-1.0.7.zip](https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.7.zip)
 - **Checksums:** [SHA256SUMS.txt](https://github.com/PFS2689/verticalshorts/releases/latest/download/SHA256SUMS.txt)
 - **Signing:** Production builds are Authenticode-signed (see [docs/SIGNING-WINDOWS.md](docs/SIGNING-WINDOWS.md))
 - **Installer:** Standard **Inno Setup 6** (see [docs/INSTALLER-WINDOWS.md](docs/INSTALLER-WINDOWS.md))

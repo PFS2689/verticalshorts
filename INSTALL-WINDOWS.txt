@@ -1,4 +1,4 @@
-Vertical Shorts Plugin for OBS Studio — Windows Install (v1.0.6)
+Vertical Shorts Plugin for OBS Studio — Windows Install (v1.0.7)
 ===============================================================
 
 Professional Vertical Streaming Plugin for OBS Studio.
@@ -6,10 +6,10 @@ Professional Vertical Streaming Plugin for OBS Studio.
 Downloads (ClamAV + Windows Defender scanned before each GitHub release is published):
 
   Setup.exe (recommended):
-    https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.6-Setup.exe
+    https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.7-Setup.exe
 
   Manual zip:
-    https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.6.zip
+    https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.7.zip
 
   Checksums:
     https://github.com/PFS2689/verticalshorts/releases/latest/download/SHA256SUMS.txt
@@ -25,9 +25,16 @@ folder (default C:\Program Files\obs-studio):
 Administrator rights (UAC) are required. Setup detects OBS automatically; if
 OBS is not found you can browse to the folder that contains bin\64bit\obs64.exe.
 
+Requires OBS Studio 32.0 or newer (64-bit). Vertical Shorts 1.0.6 could show
+"Plugin Load Error" on OBS 32.0/32.1 because it advertised module API 32.2;
+1.0.7 fixes that. If the plugin still fails to load, open:
+  Help → Log Files → View Current Log
+and look for lines containing [obs-shorts-vertical] or
+"incompatible version" / "Module '...' not loaded".
+
 Local filename (exact):
 
-  Vertical-Shorts-Plugin-1.0.6-Setup.exe
+  Vertical-Shorts-Plugin-1.0.7-Setup.exe
 
 Install log (written on every run):
 
@@ -36,7 +43,7 @@ Install log (written on every run):
 Authenticode:
   When signing credentials are configured in CI, production releases are
   Authenticode-signed. Verify with:
-    Get-AuthenticodeSignature "Vertical-Shorts-Plugin-1.0.6-Setup.exe"
+    Get-AuthenticodeSignature "Vertical-Shorts-Plugin-1.0.7-Setup.exe"
   Status should be Valid when signed.
 
 Do NOT disable Windows Defender.
@@ -65,7 +72,7 @@ treats each Setup.exe as an upgrade of the same product.
 Install with Setup.exe (recommended)
 ------------------------------------
 1. Close OBS Studio completely.
-2. Run "Vertical-Shorts-Plugin-1.0.6-Setup.exe", approve UAC, confirm the OBS
+2. Run "Vertical-Shorts-Plugin-1.0.7-Setup.exe", approve UAC, confirm the OBS
    folder (usually C:\Program Files\obs-studio), and finish the wizard.
 3. Start OBS Studio.
 4. If OBS shows Tools → Plugin Manager, ensure "Vertical Shorts Plugin" is enabled,

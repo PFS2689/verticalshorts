@@ -27,7 +27,7 @@
   #define MyAppName "Vertical Shorts Plugin"
 #endif
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.6"
+  #define MyAppVersion "1.0.7"
 #endif
 #ifndef MyAppPublisher
   #define MyAppPublisher "Vertical Shorts Plugin Contributors"
@@ -42,7 +42,7 @@
   #define OutputDir "..\..\release"
 #endif
 #ifndef OutputBaseFilename
-  #define OutputBaseFilename "Vertical-Shorts-Plugin-1.0.6-Setup"
+  #define OutputBaseFilename "Vertical-Shorts-Plugin-1.0.7-Setup"
 #endif
 
 ; Permanent product identity — DO NOT regenerate when bumping MyAppVersion.

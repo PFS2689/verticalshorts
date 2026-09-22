@@ -1,6 +1,17 @@
 # Changelog — Vertical Shorts Plugin
 
-**Official product version: 1.0.6**
+**Official product version: 1.0.7**
+
+## 1.0.7
+
+- **Fix:** OBS Plugin Load Error for `obs-shorts-vertical` on OBS Studio 32.0 / 32.1
+  - Root cause: module advertised `LIBOBS_API_VER` 32.2 (from build headers); OBS rejects plugins whose major.minor is newer than the host
+  - Fix: advertise module API **32.0.0** (all imported APIs exist since OBS 32.0); OBS 32.2+ still accepts this
+  - Defer dock/canvas construction until frontend `FINISHED_LOADING` (no heavy init in `obs_module_load`)
+  - Clear OBS log lines with advertised vs host API versions when the module loads
+- Requires **OBS Studio 32.0 or newer** (64-bit)
+- Installer filename: `Vertical-Shorts-Plugin-1.0.7-Setup.exe`
+- Stable AppId unchanged: `{D4336EAC-D873-4E6B-8575-07096987E0C8}`
 
 ## 1.0.6
 
@@ -9,7 +20,7 @@
 - Install logging under `%LOCALAPPDATA%\VerticalShortsPlugin\logs\`
 - Stronger OBS folder validation and post-install payload verification
 - Installer filename: `Vertical-Shorts-Plugin-1.0.6-Setup.exe`
-- Stable AppId unchanged: `{D4336EAC-D873-4E6B-8575-07096987E0C8}`
+- Note: 1.0.6 could fail to load on OBS 32.0/32.1 due to advertised module API 32.2 — fixed in 1.0.7
 
 ---
 

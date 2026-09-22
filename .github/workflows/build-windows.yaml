@@ -119,6 +119,28 @@ jobs:
           }
           Write-Host 'OBS module export audit passed'
 
+      - name: Verify advertised OBS module API (load compatibility)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # OBS rejects plugins whose obs_module_ver major.minor is newer than the host.
+          # We must advertise 32.0.0 while building against newer headers.
+          $src = Join-Path $env:GITHUB_WORKSPACE 'src\plugin-main.cpp'
+          $text = Get-Content -Raw $src
+          if ($text -notmatch 'MAKE_SEMANTIC_VERSION\(\s*32\s*,\s*0\s*,\s*0\s*\)') {
+            throw 'src/plugin-main.cpp must redefine LIBOBS_API_VER to MAKE_SEMANTIC_VERSION(32, 0, 0) so OBS 32.0/32.1 can load the plugin'
+          }
+          if ($text -notmatch '#undef\s+LIBOBS_API_VER') {
+            throw 'src/plugin-main.cpp must #undef LIBOBS_API_VER before redefining the advertised module API'
+          }
+          # Confirm the packaged DLL is the Release x64 output (not RelWithDebInfo/Debug)
+          $dll = Join-Path $env:GITHUB_WORKSPACE 'release\Release\obs-shorts-vertical\bin\64bit\obs-shorts-vertical.dll'
+          if (-not (Test-Path $dll)) { throw "Packaging path missing Release DLL: $dll" }
+          $item = Get-Item $dll
+          if ($item.Length -lt 100000) { throw "Release DLL unexpectedly small: $($item.Length) bytes" }
+          Write-Host "OK advertised module API 32.0.0 guard present"
+          Write-Host "OK packaging DLL: $($item.FullName) ($($item.Length) bytes)"
+
       - name: Audit DLL runtime dependents (clean-machine)
         shell: pwsh
         run: |

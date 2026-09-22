@@ -70,10 +70,10 @@ Best for ongoing commercial/OSS releases you control.
 ## After secrets are added
 
 ```bash
-git tag -d v1.0.6
-git push origin :refs/tags/v1.0.6
-git tag -a v1.0.6 -m "Vertical Shorts Plugin 1.0.6"
-git push origin v1.0.6
+git tag -d v1.0.7
+git push origin :refs/tags/v1.0.7
+git tag -a v1.0.7 -m "Vertical Shorts Plugin 1.0.7"
+git push origin v1.0.7
 ```
 
 Or push any new `v*` tag on the signing branch/main. The Release Windows workflow will sign and publish.
@@ -81,7 +81,7 @@ Or push any new `v*` tag on the signing branch/main. The Release Windows workflo
 ## Local verification
 
 ```powershell
-Get-AuthenticodeSignature '.\Vertical-Shorts-Plugin-1.0.6-Setup.exe'
+Get-AuthenticodeSignature '.\Vertical-Shorts-Plugin-1.0.7-Setup.exe'
 Get-AuthenticodeSignature '.\obs-shorts-vertical.dll'
 ```
 
