@@ -1,14 +1,38 @@
 # Changelog — Vertical Shorts Plugin
 
-**Official product version: 1.0.5**
+**Official product version: 1.0.7**
 
-All shipping artifacts (plugin DLL, Setup.exe, documentation, and installer UI) use **1.0.5** only.
+## 1.0.7
+
+- **Fix:** OBS Plugin Load Error for `obs-shorts-vertical` on OBS Studio 32.0 / 32.1
+  - Root cause: module advertised `LIBOBS_API_VER` 32.2 (from build headers); OBS rejects plugins whose major.minor is newer than the host
+  - Fix: advertise module API **32.0.0** (all imported APIs exist since OBS 32.0); OBS 32.2+ still accepts this
+  - Defer dock/canvas construction until frontend `FINISHED_LOADING` (no heavy init in `obs_module_load`)
+  - Clear OBS log lines with advertised vs host API versions when the module loads
+- Requires **OBS Studio 32.0 or newer** (64-bit)
+- Installer filename: `Vertical-Shorts-Plugin-1.0.7-Setup.exe`
+- Stable AppId unchanged: `{D4336EAC-D873-4E6B-8575-07096987E0C8}`
+
+## 1.0.6
+
+- Hardened Inno Setup installer for clean-machine OBS deployments (fresh install + upgrade)
+- Clear Retry/Cancel when OBS is running or the plugin DLL is locked (no force-kill)
+- Install logging under `%LOCALAPPDATA%\VerticalShortsPlugin\logs\`
+- Stronger OBS folder validation and post-install payload verification
+- Installer filename: `Vertical-Shorts-Plugin-1.0.6-Setup.exe`
+- Note: 1.0.6 could fail to load on OBS 32.0/32.1 due to advertised module API 32.2 — fixed in 1.0.7
+
+---
+
+## 1.0.5 (previous)
+
+All shipping artifacts for 1.0.5 used product version **1.0.5**.
 
 Earlier intermediate development labels (1.1.x–1.4.x) used during feature work are **not** separate official releases. Their notes are preserved below as development history only.
 
 ---
 
-## 1.0.5 (official)
+## 1.0.5 details
 
 Current official release of Vertical Shorts Plugin for OBS Studio (Windows).
 
@@ -22,7 +46,7 @@ Includes:
 - Secure credential storage (Windows Credential Manager + DPAPI fallback)
 - Vertical recording, short/long clips, clip buffer readiness
 - Optional recording automation and hotkeys
-- **Inno Setup 6** installer (`Vertical Shorts Plugin 1.0.5 Setup.exe`) installing into the OBS Studio folder (`obs-plugins\64bit` + `data\obs-plugins\obs-shorts-vertical`; UAC required)
+- **Inno Setup 6** installer installing into the OBS Studio folder (`obs-plugins\64bit` + `data\obs-plugins\obs-shorts-vertical`; UAC required)
 - Built against **OBS Studio 32.2.1** / obs-deps **2026-07-15**
 - MSVC Release build (`/MD`, `/DEBUG:NONE`), Windows Defender + ClamAV gates, SHA-256 checksums
 - Authenticode signing when CI credentials are configured (Azure Artifact Signing or OV/EV PFX)
