@@ -68,12 +68,7 @@ jobs:
         if: github.ref_type == 'tag'
         run: |
           if ('${{ steps.creds.outputs.signed }}' -ne 'true') {
-            Write-Warning @"
-          Authenticode signing credentials are not configured.
-          This tag release will ship UNSIGNED so load-path / OBS fixes can publish.
-          Add Azure Artifact Signing secrets or WINDOWS_CODESIGN_PFX_BASE64 + WINDOWS_CODESIGN_PASSWORD
-          (see docs/SIGNING-WINDOWS.md) and re-tag to publish signed builds.
-          "@
+            Write-Warning 'Authenticode signing credentials are not configured. This tag release will ship UNSIGNED. See docs/SIGNING-WINDOWS.md and re-tag after adding secrets.'
           }
 
       - name: Install Inno Setup 6
@@ -183,11 +178,8 @@ jobs:
           }
           if ($unexpected.Count -gt 0) {
             $unexpected | ForEach-Object { Write-Host "UNEXPECTED DEPENDENT: $_" }
-            throw @"
-Unexpected runtime dependent(s) found. These are not OBS/Qt6/system DLLs and are NOT packaged by this installer.
-Either justify them (OBS already provides them) or ship a fix — do not assume they exist on a clean church/office PC.
-$($unexpected -join ', ')
-"@
+            $list = $unexpected -join ', '
+            throw "Unexpected runtime dependent(s) (not OBS/Qt6/system; not packaged): $list"
           }
           Write-Host 'DLL dependents audit passed (x64; OBS/Qt6/system only; no nested runtimes to ship)'
 
