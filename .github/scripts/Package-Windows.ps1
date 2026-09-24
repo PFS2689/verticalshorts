@@ -99,7 +99,7 @@ function New-InstallerStaging {
         Copy-Item -Force $installSrc (Join-Path $StageRoot 'INSTALL.txt')
     }
 
-    # Version identity for in-place upgrades (AppId must never change across releases).
+    # Product identity (AppId must stay fixed so Windows recognizes the same product).
     $buildSpec = Get-Content -Path (Join-Path $ProjectRoot 'buildspec.json') -Raw | ConvertFrom-Json
     $appId = [string]$buildSpec.uuids.windowsApp
     $displayName = if ($buildSpec.displayName) { [string]$buildSpec.displayName } else { 'Vertical Shorts Plugin' }
@@ -116,7 +116,7 @@ PluginDll={autopf}\obs-studio\obs-plugins\64bit\obs-shorts-vertical.dll
 PluginData={autopf}\obs-studio\data\obs-plugins\obs-shorts-vertical
 PackageTimestampUtc=$packageStamp
 ConfigLocation=OBS scene collection key obs-shorts-vertical + Windows Credential Manager
-Notes=DLL under obs-plugins\64bit; data under data\obs-plugins\obs-shorts-vertical. User config is never overwritten.
+Notes=Clean install. DLL under obs-plugins\64bit; data under data\obs-plugins\obs-shorts-vertical. No updater.
 "@ | Set-Content -Path $metaPath -Encoding UTF8
     Write-Host "Wrote install-meta.ini (AppId={$appId}, version=$ver, PackageTimestampUtc=$packageStamp)"
 
@@ -173,6 +173,27 @@ Install Inno Setup 6 (https://jrsoftware.org/isinfo.php) or run:
     }
 
     Write-Host "Inno Setup installer ready: $outExe ($((Get-Item $outExe).Length) bytes)"
+
+    # Refuse to ship if an updater/upgrade helper leaked into the staged payload.
+    $stageHits = Get-ChildItem -Recurse $StageRoot -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -match '(?i)^(updater|update|upgrade)(-helper)?\.exe$' -or
+            $_.Name -match '(?i)upgrade-backup'
+        }
+    if ($stageHits) {
+        $stageHits | ForEach-Object { Write-Host "FORBIDDEN PAYLOAD: $($_.FullName)" }
+        throw 'Updater/upgrade helper found in staged payload — refusing to package'
+    }
+
+    # Scan Setup.exe for OUR removed upgrade-system markers (not Inno's built-in AppUpdatesURL symbol).
+    $setupAscii = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($outExe))
+    foreach ($needle in @('updater.exe', 'ConfirmUpgrade', 'CreateUpgradeBackup', 'GIsUpgrade', 'upgrade-backups', 'IsUpgradeInstall')) {
+        if ($setupAscii.Contains($needle)) {
+            throw "Forbidden updater/upgrade marker found inside Setup.exe: $needle"
+        }
+    }
+    Write-Host 'Setup.exe updater/upgrade marker scan passed'
+
     Log-Group
     return $outExe
 }
@@ -198,11 +219,11 @@ function Package {
     $DisplayName = if ($BuildSpec.displayName) { [string]$BuildSpec.displayName } else { 'Vertical Shorts Plugin' }
 
     # Official public artifact names:
-    #   Vertical-Shorts-Plugin-1.0.5.zip  (hyphenated for GitHub Release URLs)
-    #   Vertical Shorts Plugin 1.0.5 Setup.exe  (exact product installer name)
+    #   Vertical-Shorts-Plugin-<version>.zip
+    #   Vertical-Shorts-Plugin-<version>-Setup.exe
     $OutputName = "${ProductName}-${ProductVersion}-windows-${Target}"
     $OfficialZipBase = "Vertical-Shorts-Plugin-${ProductVersion}"
-    $SetupBaseName = "Vertical Shorts Plugin ${ProductVersion} Setup"
+    $SetupBaseName = "Vertical-Shorts-Plugin-${ProductVersion}-Setup"
 
     $ReleaseDir = "${ProjectRoot}/release/${Configuration}"
     $StageRoot = "${ProjectRoot}/release/staging"

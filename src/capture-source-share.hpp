@@ -5,10 +5,10 @@
 #include <string>
 #include <vector>
 
-/* Shared OBS Camera helpers: discover Main OBS Video Capture Device sources by
- * registered type ids / stable device keys, and reuse the same obs_source_t so
- * Main OBS and Vertical Shorts share one capture session while keeping
- * independent scene-item transforms. */
+/* OBS multi-canvas helpers: discover Main OBS Video Capture Device sources by
+ * registered type ids / stable device keys, then place the same obs_source_t on
+ * the Vertical Shorts obs_canvas_t via obs_scene_add. One hardware session;
+ * independent vertical scene-item transforms (Fill/Fit do not alter Main OBS). */
 
 namespace vsp {
 

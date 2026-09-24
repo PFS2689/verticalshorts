@@ -9,6 +9,19 @@
 #include <QDockWidget>
 #include <QMainWindow>
 
+/*
+ * OBS rejects modules whose obs_module_ver() major.minor is NEWER than the
+ * running OBS (patch is ignored). We build against OBS 32.2.x headers/libs,
+ * but every API this plugin imports has existed since OBS 32.0.0.
+ *
+ * Advertising LIBOBS_API_VER 32.2 caused OBS 32.0 / 32.1 to refuse to load
+ * obs-shorts-vertical (Plugin Load Error dialog) even though LoadLibrary and
+ * exports were fine. Pin the advertised module API to 32.0.0 so all OBS 32.x
+ * hosts accept the module; OBS 32.2+ still loads older-advertised modules.
+ */
+#undef LIBOBS_API_VER
+#define LIBOBS_API_VER MAKE_SEMANTIC_VERSION(32, 0, 0)
+
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("obs-shorts-vertical", "en-US")
 OBS_MODULE_AUTHOR("Vertical Shorts Plugin Contributors")
@@ -154,25 +167,36 @@ static void FrontendEvent(enum obs_frontend_event event, void *)
 
 bool obs_module_load(void)
 {
-	blog(LOG_INFO, "[obs-shorts-vertical] Loading Vertical Shorts Plugin %s (built %s, libobs %s)", PLUGIN_VERSION,
-	     PLUGIN_BUILD_TIMESTAMP,
-	     obs_get_version_string());
+	const uint32_t advertised = LIBOBS_API_VER;
+	const uint32_t host = obs_get_version();
+
+	blog(LOG_INFO,
+	     "[obs-shorts-vertical] Loading Vertical Shorts Plugin %s (built %s, host libobs %s, "
+	     "advertised module API %u.%u.%u, host API %u.%u.%u)",
+	     PLUGIN_VERSION, PLUGIN_BUILD_TIMESTAMP, obs_get_version_string(), (advertised >> 24) & 0xFF,
+	     (advertised >> 16) & 0xFF, advertised & 0xFFFF, (host >> 24) & 0xFF, (host >> 16) & 0xFF, host & 0xFFFF);
 
 	const char *bin = obs_get_module_binary_path(obs_current_module());
 	const char *data = obs_get_module_data_path(obs_current_module());
 	blog(LOG_INFO, "[obs-shorts-vertical] Module binary: %s", bin ? bin : "(null)");
 	blog(LOG_INFO, "[obs-shorts-vertical] Module data: %s", data ? data : "(null)");
 
-	obs_frontend_add_event_callback(FrontendEvent, nullptr);
-
-	if (obs_frontend_get_main_window()) {
-		obs_source_t *scene = obs_frontend_get_current_scene();
-		if (scene) {
-			obs_source_release(scene);
-			RegisterDocks();
-		}
+	/* Major-only floor: Vertical Shorts requires OBS 32 canvas/frontend APIs. */
+	if (((host >> 24) & 0xFF) < 32) {
+		blog(LOG_ERROR,
+		     "[obs-shorts-vertical] Refusing to load: OBS Studio 32.0 or newer is required "
+		     "(detected %u.%u). Update OBS or remove this plugin.",
+		     (host >> 24) & 0xFF, (host >> 16) & 0xFF);
+		return false;
 	}
 
+	obs_frontend_add_event_callback(FrontendEvent, nullptr);
+
+	/*
+	 * Do NOT construct docks / canvas / camera UI during obs_module_load.
+	 * The frontend may not be fully ready; defer to FINISHED_LOADING (and
+	 * obs_module_post_load as a backup once the main window exists).
+	 */
 	return true;
 }
 

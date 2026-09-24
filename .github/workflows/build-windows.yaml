@@ -42,7 +42,7 @@ jobs:
           "pluginVersion=$($BuildSpec.version)" >> $env:GITHUB_OUTPUT
           "commitHash=$($env:GITHUB_SHA.Substring(0,9))" >> $env:GITHUB_OUTPUT
           $ver = [string]$BuildSpec.version
-          $setupName = "Vertical Shorts Plugin $ver Setup.exe"
+          $setupName = "Vertical-Shorts-Plugin-$ver-Setup.exe"
           "setupFileName=$setupName" >> $env:GITHUB_OUTPUT
           Write-Host "Installer filename: $setupName"
 
@@ -68,12 +68,7 @@ jobs:
         if: github.ref_type == 'tag'
         run: |
           if ('${{ steps.creds.outputs.signed }}' -ne 'true') {
-            Write-Warning @"
-          Authenticode signing credentials are not configured.
-          This tag release will ship UNSIGNED so load-path / OBS fixes can publish.
-          Add Azure Artifact Signing secrets or WINDOWS_CODESIGN_PFX_BASE64 + WINDOWS_CODESIGN_PASSWORD
-          (see docs/SIGNING-WINDOWS.md) and re-tag to publish signed builds.
-          "@
+            Write-Warning 'Authenticode signing credentials are not configured. This tag release will ship UNSIGNED. See docs/SIGNING-WINDOWS.md and re-tag after adding secrets.'
           }
 
       - name: Install Inno Setup 6
@@ -88,20 +83,19 @@ jobs:
           & $iscc /? | Select-Object -First 3
           Write-Host "ISCC: $iscc"
 
-      # 1) Build plugin
+      # 1) Build plugin (always Release x64 — shipping installer payload)
       - name: Build Plugin
         uses: ./.github/actions/build-plugin
         with:
           target: x64
-          config: ${{ github.ref_type == 'tag' && 'Release' || 'RelWithDebInfo' }}
+          config: Release
 
       # 2) Verify plugin DLL + resources before any packaging
       - name: Audit OBS module exports
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $config = if ('${{ github.ref_type }}' -eq 'tag') { 'Release' } else { 'RelWithDebInfo' }
-          $dll = Join-Path $env:GITHUB_WORKSPACE "release\$config\obs-shorts-vertical\bin\64bit\obs-shorts-vertical.dll"
+          $dll = Join-Path $env:GITHUB_WORKSPACE "release\Release\obs-shorts-vertical\bin\64bit\obs-shorts-vertical.dll"
           if (-not (Test-Path $dll)) { throw "Missing plugin DLL for export audit: $dll" }
           $dumpbin = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
             -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
@@ -125,12 +119,97 @@ jobs:
           }
           Write-Host 'OBS module export audit passed'
 
+      - name: Verify advertised OBS module API (load compatibility)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # OBS rejects plugins whose obs_module_ver major.minor is newer than the host.
+          # We must advertise 32.0.0 while building against newer headers.
+          $src = Join-Path $env:GITHUB_WORKSPACE 'src\plugin-main.cpp'
+          $text = Get-Content -Raw $src
+          if ($text -notmatch 'MAKE_SEMANTIC_VERSION\(\s*32\s*,\s*0\s*,\s*0\s*\)') {
+            throw 'src/plugin-main.cpp must redefine LIBOBS_API_VER to MAKE_SEMANTIC_VERSION(32, 0, 0) so OBS 32.0/32.1 can load the plugin'
+          }
+          if ($text -notmatch '#undef\s+LIBOBS_API_VER') {
+            throw 'src/plugin-main.cpp must #undef LIBOBS_API_VER before redefining the advertised module API'
+          }
+          # Confirm the packaged DLL is the Release x64 output (not RelWithDebInfo/Debug)
+          $dll = Join-Path $env:GITHUB_WORKSPACE 'release\Release\obs-shorts-vertical\bin\64bit\obs-shorts-vertical.dll'
+          if (-not (Test-Path $dll)) { throw "Packaging path missing Release DLL: $dll" }
+          $item = Get-Item $dll
+          if ($item.Length -lt 100000) { throw "Release DLL unexpectedly small: $($item.Length) bytes" }
+          Write-Host "OK advertised module API 32.0.0 guard present"
+          Write-Host "OK packaging DLL: $($item.FullName) ($($item.Length) bytes)"
+
+      - name: Audit DLL runtime dependents (clean-machine)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dll = Join-Path $env:GITHUB_WORKSPACE "release\Release\obs-shorts-vertical\bin\64bit\obs-shorts-vertical.dll"
+          if (-not (Test-Path $dll)) { throw "Missing plugin DLL for dependents audit: $dll" }
+          $dumpbin = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -find '**/dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe not found' }
+
+          # Machine type: 0x8664 = AMD64
+          $headers = & $dumpbin /HEADERS $dll | Out-String
+          Write-Host $headers
+          if ($headers -notmatch '8664 machine \(x64\)') {
+            throw 'Plugin DLL is not x64 (AMD64). Refusing to package a non-x64 binary.'
+          }
+
+          $deps = & $dumpbin /DEPENDENTS $dll | Out-String
+          Write-Host $deps
+
+          # Forbidden: debug CRT, Qt5, or other deps that would silently break on a clean OBS PC.
+          $forbidden = @(
+            'Qt5', 'MSVCR1', 'MSVCP1[0-2]', 'ucrtbased', 'VCRUNTIME140D', 'MSVCP140D',
+            'd3dcompiler_43', 'concrt140d'
+          )
+
+          # Allowed: Windows system / UCRT / VCRedist shipped with OBS, plus OBS + Qt6 that OBS already loads.
+          $allowedExact = [System.Collections.Generic.HashSet[string]]::new(
+            [StringComparer]::OrdinalIgnoreCase
+          )
+          @(
+            'KERNEL32.dll','USER32.dll','GDI32.dll','ADVAPI32.dll','SHELL32.dll','SHLWAPI.dll',
+            'OLE32.dll','OLEAUT32.dll','COMDLG32.dll','COMCTL32.dll','UUID.dll','WS2_32.dll',
+            'WINMM.dll','IMM32.dll','VERSION.dll','CRYPT32.dll','BCRYPT.dll','NSI.dll','NTDLL.dll',
+            'SETUPAPI.dll','UXTHEME.dll','DWMAPI.dll','IPHLPAPI.dll','DNSAPI.dll','SECUR32.dll',
+            'NETAPI32.dll','WTSAPI32.dll','USERENV.dll','PROPSYS.dll','WINTRUST.dll','DBGHELP.dll',
+            'MSVCP140.dll','VCRUNTIME140.dll','VCRUNTIME140_1.dll','UCRTBASE.dll',
+            'obs.dll','obs-frontend-api.dll',
+            'Qt6Core.dll','Qt6Gui.dll','Qt6Widgets.dll','Qt6Svg.dll','Qt6Network.dll','Qt6Xml.dll'
+          ) | ForEach-Object { [void]$allowedExact.Add($_) }
+
+          $depLines = ($deps -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object {
+            $_ -match '\.dll$' -and $_ -notmatch 'Dump of file|File Type|Image has|Summary'
+          }
+          $unexpected = @()
+          foreach ($name in $depLines) {
+            Write-Host "Dependent: $name"
+            foreach ($bad in $forbidden) {
+              if ($name -match $bad) {
+                throw "Forbidden/dev-only dependent detected: $name"
+              }
+            }
+            if ($name -like 'api-ms-win-*') { continue }
+            if ($allowedExact.Contains($name)) { continue }
+            $unexpected += $name
+          }
+          if ($unexpected.Count -gt 0) {
+            $unexpected | ForEach-Object { Write-Host "UNEXPECTED DEPENDENT: $_" }
+            $list = $unexpected -join ', '
+            throw "Unexpected runtime dependent(s) (not OBS/Qt6/system; not packaged): $list"
+          }
+          Write-Host 'DLL dependents audit passed (x64; OBS/Qt6/system only; no nested runtimes to ship)'
+
       - name: Prepare INSTALL.txt and audit plugin layout
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $config = if ('${{ github.ref_type }}' -eq 'tag') { 'Release' } else { 'RelWithDebInfo' }
-          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "release\$config"
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "release\Release"
           $root = Join-Path $releaseDir 'obs-shorts-vertical'
           if (Test-Path "$env:GITHUB_WORKSPACE\INSTALL-WINDOWS.txt") {
             Copy-Item -Force "$env:GITHUB_WORKSPACE\INSTALL-WINDOWS.txt" (Join-Path $releaseDir 'INSTALL.txt')
@@ -154,6 +233,17 @@ jobs:
             throw 'Unexpected executables or runtime DLLs in plugin package'
           }
           Write-Host 'Plugin layout audit passed'
+
+      # Upload known-good Release payload BEFORE packaging so manual-install
+      # recovery can proceed even if the installer step fails.
+      - name: Upload Release plugin payload (manual install)
+        uses: actions/upload-artifact@v4
+        with:
+          name: obs-shorts-vertical-${{ steps.setup.outputs.pluginVersion }}-release-x64-dll
+          path: |
+            ${{ github.workspace }}/release/Release/obs-shorts-vertical/
+            ${{ github.workspace }}/release/Release/INSTALL.txt
+          if-no-files-found: error
 
       - name: Sign plugin DLL (Azure Artifact Signing)
         if: github.ref_type == 'tag' && steps.creds.outputs.has_azure == 'true'
@@ -187,7 +277,7 @@ jobs:
         uses: ./.github/actions/package-plugin
         with:
           target: x64
-          config: ${{ github.ref_type == 'tag' && 'Release' || 'RelWithDebInfo' }}
+          config: Release
           package: 'true'
 
       - name: Verify Inno Setup installer output
@@ -198,13 +288,37 @@ jobs:
           $len = (Get-Item $setup).Length
           if ($len -lt 50000) { throw "Installer unexpectedly small: $len bytes" }
           Write-Host "OK Inno Setup installer: $setup ($len bytes)"
-          # Confirm Inno marker present
           $bytes = [System.IO.File]::ReadAllBytes($setup)
           $text = [System.Text.Encoding]::ASCII.GetString($bytes)
           if ($text -notmatch 'Inno Setup') {
             throw 'Output EXE does not look like an Inno Setup installer'
           }
           Write-Host 'Inno Setup signature string found in installer'
+
+          # Confirm staged payload that ISCC packaged (filenames are LZMA-compressed inside Setup.exe,
+          # so do not require them as plain ASCII in the binary).
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'release\staging\obs-shorts-vertical'
+          $required = @(
+            (Join-Path $stage 'bin\64bit\obs-shorts-vertical.dll'),
+            (Join-Path $stage 'data\locale\en-US.ini'),
+            (Join-Path $stage 'INSTALL.txt')
+          )
+          foreach ($p in $required) {
+            if (-not (Test-Path $p)) { throw "Staged installer payload missing: $p" }
+            Write-Host "OK staged payload: $p ($((Get-Item $p).Length) bytes)"
+          }
+
+          # Forbidden leftover upgrade/updater markers from the removed upgrade system
+          foreach ($bad in @('ConfirmUpgrade', 'CreateUpgradeBackup', 'GIsUpgrade', 'IsUpgradeInstall', 'upgrade-backups')) {
+            if ($text.Contains($bad)) {
+              throw "Setup.exe still contains forbidden updater/upgrade marker: $bad"
+            }
+          }
+          # updater.exe as a packaged helper name (avoid substring false positives)
+          if ($text -match '(?i)(^|[^A-Za-z0-9_-])updater\.exe([^A-Za-z0-9_]|$)') {
+            throw 'Setup.exe still contains forbidden updater.exe marker'
+          }
+          Write-Host 'Setup.exe updater/upgrade remnant scan passed'
 
       - name: Sign Setup.exe (Azure Artifact Signing)
         if: github.ref_type == 'tag' && steps.creds.outputs.has_azure == 'true'

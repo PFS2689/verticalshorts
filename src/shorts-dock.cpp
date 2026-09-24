@@ -259,68 +259,6 @@ void DrawSquareAtPos(float x, float y, float radius)
 	gs_matrix_pop();
 }
 
-obs_source_t *FindFrontendSceneByUuid(const QString &uuid)
-{
-	if (uuid.isEmpty())
-		return nullptr;
-
-	obs_frontend_source_list scenes = {};
-	obs_frontend_get_scenes(&scenes);
-	obs_source_t *found = nullptr;
-	for (size_t i = 0; i < scenes.sources.num; i++) {
-		obs_source_t *src = scenes.sources.array[i];
-		const char *id = obs_source_get_uuid(src);
-		if (id && uuid == QString::fromUtf8(id)) {
-			found = obs_source_get_ref(src);
-			break;
-		}
-	}
-	obs_frontend_source_list_free(&scenes);
-	return found;
-}
-
-bool MirrorHasSource(obs_scene_t *mirror, obs_source_t *source)
-{
-	struct Data {
-		obs_source_t *source;
-		bool found;
-	} data{source, false};
-
-	obs_scene_enum_items(
-		mirror,
-		[](obs_scene_t *, obs_sceneitem_t *item, void *param) -> bool {
-			auto *d = static_cast<Data *>(param);
-			if (obs_sceneitem_get_source(item) == d->source) {
-				d->found = true;
-				return false;
-			}
-			return true;
-		},
-		&data);
-	return data.found;
-}
-
-obs_sceneitem_t *FindItemBySource(obs_scene_t *scene, obs_source_t *source)
-{
-	struct Data {
-		obs_source_t *source;
-		obs_sceneitem_t *item;
-	} data{source, nullptr};
-
-	obs_scene_enum_items(
-		scene,
-		[](obs_scene_t *, obs_sceneitem_t *item, void *param) -> bool {
-			auto *d = static_cast<Data *>(param);
-			if (obs_sceneitem_get_source(item) == d->source) {
-				d->item = item;
-				return false;
-			}
-			return true;
-		},
-		&data);
-	return data.item;
-}
-
 obs_sceneitem_t *FindItemById(obs_scene_t *scene, int64_t id)
 {
 	struct Data {
@@ -729,9 +667,9 @@ void ShortsDock::CreateView()
 	ovi.output_width = verticalWidth;
 	ovi.output_height = verticalHeight;
 
-	/* ACTIVATE | SCENE_REF — MAIN_VIEW activation for capture devices.
-	 * MIX_AUDIO intentionally omitted so vertical canvas audio is not mixed
-	 * into the main OBS program audio output. */
+	/* OBS 32 multi-canvas: dedicated private PROGRAM canvas with ACTIVATE so
+	 * shared Video Capture Device sources receive activate_refs when channel 0
+	 * is bound. MIX_AUDIO omitted — vertical audio stays independent of Main. */
 	const uint32_t verticalCanvasFlags = ACTIVATE | SCENE_REF;
 	if (!canvas) {
 		canvas = obs_canvas_create_private("Vertical Shorts", &ovi, verticalCanvasFlags);
@@ -1498,82 +1436,6 @@ void ShortsDock::NotifySharedCameraFeed()
 	QMessageBox::information(this, Translate("AddSource"), Translate("SharedCameraFeedInfo"));
 }
 
-void ShortsDock::ResolveSharedCapture(OBSSource created)
-{
-	if (clearing || !created || !scene)
-		return;
-	if (!vsp::IsVideoCaptureSourceId(obs_source_get_id(created)))
-		return;
-
-	const std::string key = vsp::GetCaptureDeviceKey(created);
-	if (key.empty())
-		return;
-
-	OBSSourceAutoRelease existing = vsp::FindExistingCaptureByDeviceKey(key, created);
-	if (!existing)
-		return;
-
-	blog(LOG_INFO,
-	     "[obs-shorts-vertical] Camera share resolve: replacing new source '%s' with existing '%s' key=%s",
-	     obs_source_get_name(created), obs_source_get_name(existing), key.c_str());
-
-	RemoveVerticalItemsForSource(created);
-	/* Destroy the unused second capture source so it cannot hold/steal the device. */
-	obs_source_remove(created);
-
-	if (!vsp::VerticalSceneHasSource(scene, existing))
-		AddSourceToActiveScene(existing, true);
-
-	NotifySharedCameraFeed();
-	EmitSourceUiChanged();
-}
-
-void ShortsDock::WatchCaptureSourceForShare(obs_source_t *created)
-{
-	if (!created)
-		return;
-	OBSSource held = created;
-	/* Properties dialog is modeless — poll until a device id appears, then share if matched. */
-	const int delaysMs[] = {400, 1000, 2000, 4000, 7000};
-	for (int delay : delaysMs) {
-		QTimer::singleShot(delay, this, [this, held]() {
-			if (clearing || !held)
-				return;
-			/* If the provisional source was already removed/replaced, stop. */
-			OBSSourceAutoRelease still = obs_get_source_by_name(obs_source_get_name(held));
-			if (!still || still.Get() != held.Get())
-				return;
-			const std::string key = vsp::GetCaptureDeviceKey(held);
-			if (key.empty())
-				return;
-			OBSSourceAutoRelease existing = vsp::FindExistingCaptureByDeviceKey(key, held);
-			if (existing) {
-				ResolveSharedCapture(held);
-				return;
-			}
-		});
-	}
-	/* Final fallback after last poll window. */
-	QTimer::singleShot(7500, this, [this, held]() {
-		if (clearing || !held)
-			return;
-		OBSSourceAutoRelease still = obs_get_source_by_name(obs_source_get_name(held));
-		if (!still || still.Get() != held.Get())
-			return;
-		if (vsp::FindExistingCaptureByDeviceKey(vsp::GetCaptureDeviceKey(held), held)) {
-			ResolveSharedCapture(held);
-			return;
-		}
-		if (obs_source_get_width(held) == 0 || obs_source_get_height(held) == 0) {
-			QMessageBox::warning(this, Translate("AddSource"), Translate("CameraDeviceInUseHint"));
-			blog(LOG_WARNING,
-			     "[obs-shorts-vertical] Camera share fallback: source '%s' has no frames "
-			     "(device may be busy; share existing or pick another device)",
-			     obs_source_get_name(held));
-		}
-	});
-}
-
 void ShortsDock::CreateOrShareCaptureSource(const std::string &typeId, const QString &label)
 {
 	if (!scene)
@@ -1658,7 +1520,8 @@ void ShortsDock::CreateOrShareCaptureSource(const std::string &typeId, const QSt
 		return;
 	}
 
-	/* No existing Main OBS capture of this family — first open is allowed. */
+	/* No existing Main OBS capture of this family — first open is allowed.
+	 * Vertical canvas uses the same obs_source_t via obs_scene_add (multi-canvas). */
 	const QString name = UniqueSourceName(label);
 	obs_source_t *created = obs_source_create(typeId.c_str(), name.toUtf8().constData(), nullptr, nullptr);
 	if (!created) {
@@ -1667,12 +1530,11 @@ void ShortsDock::CreateOrShareCaptureSource(const std::string &typeId, const QSt
 	}
 
 	AddSourceToActiveScene(created, true);
-	WatchCaptureSourceForShare(created);
 	if (obs_source_configurable(created))
 		obs_frontend_open_source_properties(created);
 
 	blog(LOG_INFO,
-	     "[obs-shorts-vertical] Created capture source '%s' (%s); watching for device-id share match",
+	     "[obs-shorts-vertical] Created capture source '%s' (%s) on vertical canvas (shared scene-item model)",
 	     obs_source_get_name(created), typeId.c_str());
 	obs_source_release(created);
 	EmitSourceUiChanged();
@@ -1959,27 +1821,39 @@ void ShortsDock::ApplyVerticalFitMode(obs_sceneitem_t *item, VerticalFitMode mod
 	if (persist)
 		StoreFitMode(item, mode);
 
-	/* Clear manual crop — Fill/Fit use bounds cropping, not scene-item crop. */
-	obs_sceneitem_crop zeroCrop = {0, 0, 0, 0};
-	obs_sceneitem_set_crop(item, &zeroCrop);
+	blog(LOG_INFO,
+	     "[obs-shorts-vertical] Fit begin mode=%d source='%s' sourceSize=%ux%u canvas=%ux%u fillPos=%d",
+	     (int)mode, source ? obs_source_get_name(source) : "?", sw, sh, (uint32_t)canvasW, (uint32_t)canvasH,
+	     (int)fillPos);
 
 	obs_transform_info info{};
 	obs_sceneitem_get_info2(item, &info);
 	info.rot = 0.0f;
-	vec2_set(&info.scale, 1.0f, 1.0f);
+
+	obs_sceneitem_crop crop = {0, 0, 0, 0};
 
 	switch (mode) {
-	case VerticalFitMode::Fill:
-		/* Cover the vertical canvas, preserve AR, crop overflow (no stretch). */
+	case VerticalFitMode::Fill: {
+		/* Native OBS cover-fill (Aitum-style multi-canvas path):
+		 * OBS_BOUNDS_SCALE_OUTER + crop_to_bounds on THIS vertical scene item only.
+		 * Do NOT manually crop/scale — that previously blanked the vertical camera.
+		 * Independent of Main OBS scene-item transforms for the same shared source. */
+		vec2_set(&info.scale, 1.0f, 1.0f);
 		vec2_set(&info.pos, 0.0f, 0.0f);
 		info.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
 		vec2_set(&info.bounds, canvasW, canvasH);
 		info.bounds_type = OBS_BOUNDS_SCALE_OUTER;
 		info.bounds_alignment = FillBoundsAlignment(fillPos);
 		info.crop_to_bounds = true;
+		blog(LOG_INFO,
+		     "[obs-shorts-vertical] Cover fill (native SCALE_OUTER+crop_to_bounds) "
+		     "sourceSize=%ux%u canvas=%gx%g fillPos=%d",
+		     sw, sh, canvasW, canvasH, (int)fillPos);
 		break;
+	}
 	case VerticalFitMode::FitInside:
-		/* Entire source visible; may letterbox. */
+		/* Entire source visible; may letterbox (contain). */
+		vec2_set(&info.scale, 1.0f, 1.0f);
 		vec2_set(&info.pos, 0.0f, 0.0f);
 		info.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
 		vec2_set(&info.bounds, canvasW, canvasH);
@@ -1988,6 +1862,7 @@ void ShortsDock::ApplyVerticalFitMode(obs_sceneitem_t *item, VerticalFitMode mod
 		info.crop_to_bounds = false;
 		break;
 	case VerticalFitMode::Original:
+		vec2_set(&info.scale, 1.0f, 1.0f);
 		vec2_set(&info.bounds, 0.0f, 0.0f);
 		info.bounds_type = OBS_BOUNDS_NONE;
 		info.bounds_alignment = OBS_ALIGN_CENTER;
@@ -1997,6 +1872,7 @@ void ShortsDock::ApplyVerticalFitMode(obs_sceneitem_t *item, VerticalFitMode mod
 		break;
 	case VerticalFitMode::Stretch:
 		/* Manual-only distorting fill. Never used as automatic default. */
+		vec2_set(&info.scale, 1.0f, 1.0f);
 		vec2_set(&info.pos, 0.0f, 0.0f);
 		info.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
 		vec2_set(&info.bounds, canvasW, canvasH);
@@ -2006,13 +1882,24 @@ void ShortsDock::ApplyVerticalFitMode(obs_sceneitem_t *item, VerticalFitMode mod
 		break;
 	}
 
+	obs_sceneitem_set_crop(item, &crop);
 	obs_sceneitem_set_info2(item, &info);
+	/* Explicit bounds-crop API — required for SCALE_OUTER cover on OBS 32. */
+	obs_sceneitem_set_bounds_crop(item, info.bounds_type == OBS_BOUNDS_SCALE_OUTER && info.crop_to_bounds);
 
+	/* Read back actual transform for diagnostics (vertical item only). */
+	obs_transform_info applied{};
+	obs_sceneitem_get_info2(item, &applied);
+	obs_sceneitem_crop appliedCrop{};
+	obs_sceneitem_get_crop(item, &appliedCrop);
 	blog(LOG_INFO,
-	     "[obs-shorts-vertical] Applied fit mode=%d fill_pos=%d to '%s' source=%ux%u canvas=%ux%u "
-	     "bounds_type=%d crop_to_bounds=%d",
-	     (int)mode, (int)fillPos, source ? obs_source_get_name(source) : "?", sw, sh, (uint32_t)canvasW,
-	     (uint32_t)canvasH, (int)info.bounds_type, (int)info.crop_to_bounds);
+	     "[obs-shorts-vertical] Fit applied mode=%d '%s' source=%ux%u canvas=%ux%u "
+	     "pos=(%.1f,%.1f) scale=(%.4f,%.4f) bounds_type=%d bounds=(%.1f,%.1f) "
+	     "crop_to_bounds=%d crop=L%u R%u T%u B%u",
+	     (int)mode, source ? obs_source_get_name(source) : "?", sw, sh, (uint32_t)canvasW, (uint32_t)canvasH,
+	     applied.pos.x, applied.pos.y, applied.scale.x, applied.scale.y, (int)applied.bounds_type, applied.bounds.x,
+	     applied.bounds.y, (int)applied.crop_to_bounds, appliedCrop.left, appliedCrop.right, appliedCrop.top,
+	     appliedCrop.bottom);
 }
 
 void ShortsDock::FitSceneItemToCanvas(obs_sceneitem_t *item)
@@ -2360,8 +2247,6 @@ void ShortsDock::RequestPasteSource()
 		return;
 	}
 	AddSourceToActiveScene(created, true);
-	if (vsp::IsVideoCaptureSourceId(g_sourceClipboard.id.c_str()))
-		WatchCaptureSourceForShare(created);
 	obs_source_release(created);
 	EmitSourceUiChanged();
 }
@@ -2484,8 +2369,8 @@ bool ShortsDock::HasTransformClipboard() const
 
 void ShortsDock::RequestFitToScreen()
 {
-	/* Legacy name — now means Fit Inside (show entire source). */
-	RequestFitInsideVerticalCanvas();
+	/* "Fit to Vertical Canvas" for cameras/video = COVER fill (no letterboxing). */
+	RequestFillVerticalCanvas();
 }
 
 void ShortsDock::RequestFillVerticalCanvas()
@@ -2587,6 +2472,8 @@ void ShortsDock::AppendTransformFitMenu(QMenu *transformMenu)
 		act->setChecked(curMode == mode);
 		return act;
 	};
+	/* Fit to Vertical Canvas = cover fill for cameras (no blank bars). */
+	addMode("FitToScreen", VerticalFitMode::Fill, &ShortsDock::RequestFitToScreen);
 	addMode("FillVerticalCanvas", VerticalFitMode::Fill, &ShortsDock::RequestFillVerticalCanvas);
 	addMode("FitInsideVerticalCanvas", VerticalFitMode::FitInside, &ShortsDock::RequestFitInsideVerticalCanvas);
 	addMode("OriginalSize", VerticalFitMode::Original, &ShortsDock::RequestOriginalSize);
