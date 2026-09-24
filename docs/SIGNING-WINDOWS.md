@@ -3,7 +3,7 @@
 Production Release tags (**`vX.Y.Z`**) **should** carry a valid Authenticode signature on:
 
 - `obs-shorts-vertical.dll`
-- `Vertical Shorts Plugin <version> Setup.exe` (Inno Setup 6)
+- `Vertical-Shorts-Plugin-<version>-Setup.exe` (Inno Setup 6)
 
 When Azure Artifact Signing or PFX secrets are present, CI signs both artifacts and verifies `Get-AuthenticodeSignature` → `Valid`.  
 If secrets are missing, CI still publishes the Release (unsigned) so load-path / OBS compatibility fixes can ship; re-tag after adding secrets to publish signed builds.
@@ -56,10 +56,10 @@ Best for ongoing commercial/OSS releases you control.
 ## What CI does on a tag
 
 1. Build MSVC **Release** plugin DLL  
-2. Verify DLL exports + package layout  
+2. Verify DLL exports + package layout + dumpbin dependents  
 3. **Sign** `obs-shorts-vertical.dll`  
 4. Stage payload under `release/staging/`  
-5. Package with **Inno Setup 6** (`ISCC.exe`) → `Vertical Shorts Plugin <version> Setup.exe`  
+5. Package with **Inno Setup 6** (`ISCC.exe`) → `Vertical-Shorts-Plugin-<version>-Setup.exe`  
 6. **Sign** the Setup.exe  
 7. Verify `Get-AuthenticodeSignature` → `Valid`  
 8. Windows Defender + ClamAV  
@@ -70,10 +70,10 @@ Best for ongoing commercial/OSS releases you control.
 ## After secrets are added
 
 ```bash
-git tag -d v1.0.5
-git push origin :refs/tags/v1.0.5
-git tag -a v1.0.5 -m "Vertical Shorts Plugin 1.0.5"
-git push origin v1.0.5
+git tag -d v1.0.8
+git push origin :refs/tags/v1.0.8
+git tag -a v1.0.8 -m "Vertical Shorts Plugin 1.0.8"
+git push origin v1.0.8
 ```
 
 Or push any new `v*` tag on the signing branch/main. The Release Windows workflow will sign and publish.
@@ -81,7 +81,7 @@ Or push any new `v*` tag on the signing branch/main. The Release Windows workflo
 ## Local verification
 
 ```powershell
-Get-AuthenticodeSignature '.\Vertical Shorts Plugin 1.0.5 Setup.exe'
+Get-AuthenticodeSignature '.\Vertical-Shorts-Plugin-1.0.8-Setup.exe'
 Get-AuthenticodeSignature '.\obs-shorts-vertical.dll'
 ```
 

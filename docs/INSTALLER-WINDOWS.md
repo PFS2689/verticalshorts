@@ -1,17 +1,15 @@
 # Windows installer (Inno Setup)
 
 Vertical Shorts Plugin ships a **standard Inno Setup 6** installer with a permanent
-in-place upgrade identity.
+in-place upgrade identity, hardened for clean-machine OBS installs.
 
 ## Final installer name
 
 ```
-Vertical Shorts Plugin 1.0.5 Setup.exe
+Vertical-Shorts-Plugin-1.0.8-Setup.exe
 ```
 
 (Product name and version come from `buildspec.json`.)
-
-Release/build timestamps are generated at CI configure/package/publish time (`PLUGIN_BUILD_TIMESTAMP`, `PackageTimestampUtc`, GitHub Release **Last Updated**). They must never be hard-coded or copied from an older 1.0.5 artifact.
 
 ## Permanent AppId (do not change)
 
@@ -39,38 +37,64 @@ Plugin destinations:
 
 Administrator (UAC) is required.
 
-### `{app}` initialization rule
+### Runtime dependencies
 
-`ExpandConstant('{app}')` must **never** run inside `InitializeSetup` (or any code path that runs before the install directory is initialized). Doing so raises:
+This plugin links against **OBS-provided** `libobs` / `obs-frontend-api` / Qt6.
+The installer must **not** bundle nested Qt or `obs.dll` copies.
+The Visual C++ runtime is provided by OBS Studio itself.
+
+### OBS version compatibility
+
+Vertical Shorts requires **OBS Studio 32.0+ (x64)**.
+
+The Windows build compiles against OBS 32.2.1 headers, but `obs_module_ver()`
+advertises **API 32.0.0** so OBS 32.0 and 32.1 will load the module. OBS rejects
+plugins that advertise a newer major.minor than the host (that was the 1.0.6
+"Plugin Load Error" on older 32.x installs).
+
+## Install log
+
+Every Setup run writes:
 
 ```
-Internal error: An attempt was made to expand the "{app}" constant before it was initialized.
+%LOCALAPPDATA%\VerticalShortsPlugin\logs\install-YYYYMMDD_HHMMSS.log
 ```
 
-Early logic uses `{autopf}`, registry lookups, and `GObsInstallPath` instead.
+The log includes installer version, detected OBS path, architecture, destination
+paths, OBS-running / DLL-lock waits, copy/verify results, and Windows error
+codes. It never records stream keys, credentials, or passwords.
 
 ## OBS detection
 
-Before the wizard starts, Setup looks for `bin\64bit\obs64.exe` via:
+Before the wizard starts, Setup looks for a valid OBS root
+(`bin\64bit\obs64.exe` + `obs-plugins\64bit` + `data\obs-plugins`) via:
 
 1. Previous Vertical Shorts uninstall `InstallLocation` (if it is a valid OBS root)
 2. `HKLM\Software\OBS Studio`
 3. OBS Studio uninstall `InstallLocation`
-4. `{autopf}\obs-studio` / `{pf}\obs-studio`
+4. `{autopf}\obs-studio` / `{pf}\obs-studio` / `C:\Program Files\obs-studio`
 
 If OBS is not found, the directory page lets the user browse manually.
 
-## In-place upgrades
+## Locked DLL / OBS running
 
-When Vertical Shorts Plugin is already installed, running a newer Setup.exe:
+If OBS is running or `obs-shorts-vertical.dll` is locked, Setup shows Retry/Cancel
+and **does not force-kill OBS**. File copy proceeds only after the DLL can be
+opened exclusively.
 
-1. Detects the previous version (uninstall registry + known DLL paths — not `{app}`)
-2. Shows an **Upgrade** / **Cancel** confirmation
-3. Requires OBS Studio to be closed
-4. Creates a lightweight backup under `%LOCALAPPDATA%\VerticalShortsPlugin\upgrade-backups\`
-5. Replaces plugin binaries/resources under the OBS tree
-6. Removes legacy ProgramData plugin copies if present
-7. Preserves user configuration (scene collection + Credential Manager)
+## In-place reinstall
+
+Running Setup.exe when Vertical Shorts is already installed:
+
+1. Detects the previous install location (uninstall registry + known DLL paths)
+2. Requires OBS Studio to be closed / DLL unlocked (Retry loop)
+3. Replaces plugin binaries/resources under the OBS tree
+4. Removes obsolete Vertical Shorts copies from known legacy paths only
+5. Preserves user configuration (scene collection + Credential Manager)
+6. Verifies DLL + locale data after install
+
+There is **no in-app updater** and no upgrade-confirmation dialog — Setup simply
+installs/replaces plugin files. User OBS scenes and credentials are never deleted.
 
 ## Build order (required)
 
@@ -90,7 +114,7 @@ $env:CI = '1'
 
 Output:
 
-- `release\Vertical Shorts Plugin <version> Setup.exe`
+- `release\Vertical-Shorts-Plugin-<version>-Setup.exe`
 - `release\Vertical-Shorts-Plugin-<version>.zip`
 
 ## Script
