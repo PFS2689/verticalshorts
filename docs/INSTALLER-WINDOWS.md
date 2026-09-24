@@ -6,7 +6,7 @@ in-place upgrade identity, hardened for clean-machine OBS installs.
 ## Final installer name
 
 ```
-Vertical-Shorts-Plugin-1.0.7-Setup.exe
+Vertical-Shorts-Plugin-1.0.8-Setup.exe
 ```
 
 (Product name and version come from `buildspec.json`.)
@@ -82,18 +82,19 @@ If OBS is running or `obs-shorts-vertical.dll` is locked, Setup shows Retry/Canc
 and **does not force-kill OBS**. File copy proceeds only after the DLL can be
 opened exclusively.
 
-## In-place upgrades
+## In-place reinstall
 
-When Vertical Shorts Plugin is already installed, running a newer Setup.exe:
+Running Setup.exe when Vertical Shorts is already installed:
 
-1. Detects the previous version (uninstall registry + known DLL paths — not `{app}`)
-2. Shows an **Upgrade** / **Cancel** confirmation
-3. Requires OBS Studio to be closed / DLL unlocked (Retry loop)
-4. Creates a lightweight backup under `%LOCALAPPDATA%\VerticalShortsPlugin\upgrade-backups\`
-5. Replaces plugin binaries/resources under the OBS tree
-6. Removes obsolete Vertical Shorts copies from known legacy paths only
-7. Preserves user configuration (scene collection + Credential Manager)
-8. Verifies DLL + locale data after install
+1. Detects the previous install location (uninstall registry + known DLL paths)
+2. Requires OBS Studio to be closed / DLL unlocked (Retry loop)
+3. Replaces plugin binaries/resources under the OBS tree
+4. Removes obsolete Vertical Shorts copies from known legacy paths only
+5. Preserves user configuration (scene collection + Credential Manager)
+6. Verifies DLL + locale data after install
+
+There is **no in-app updater** and no upgrade-confirmation dialog — Setup simply
+installs/replaces plugin files. User OBS scenes and credentials are never deleted.
 
 ## Build order (required)
 

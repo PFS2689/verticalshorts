@@ -27,7 +27,7 @@
   #define MyAppName "Vertical Shorts Plugin"
 #endif
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.7"
+  #define MyAppVersion "1.0.8"
 #endif
 #ifndef MyAppPublisher
   #define MyAppPublisher "Vertical Shorts Plugin Contributors"
@@ -42,7 +42,7 @@
   #define OutputDir "..\..\release"
 #endif
 #ifndef OutputBaseFilename
-  #define OutputBaseFilename "Vertical-Shorts-Plugin-1.0.7-Setup"
+  #define OutputBaseFilename "Vertical-Shorts-Plugin-1.0.8-Setup"
 #endif
 
 ; Permanent product identity — DO NOT regenerate when bumping MyAppVersion.
@@ -57,7 +57,6 @@ AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
-AppUpdatesURL={#MyAppURL}
 DefaultDirName={code:GetDefaultDirName}
 UsePreviousAppDir=no
 DisableProgramGroupPage=yes
@@ -140,9 +139,7 @@ const
   WIN_INVALID_HANDLE_VALUE = $FFFFFFFF;
 
 var
-  GIsUpgrade: Boolean;
   GPreviousVersion: String;
-  GUpgradeBackupDir: String;
   GObsInstallPath: String;
   GExistingPluginDll: String;
   GInstallLogPath: String;
@@ -392,33 +389,9 @@ begin
   Result := Ver;
 end;
 
-function IsUpgradeInstall: Boolean;
+function IsReplacingExisting: Boolean;
 begin
   Result := (DetectPreviousVersion <> '') or (FindExistingPluginDll <> '');
-end;
-
-function CompareVersionParts(const A, B: String): Integer;
-var
-  AMaj, AMin, APat, BMaj, BMin, BPat: Int64;
-  ARest, BRest: String;
-begin
-  ARest := A;
-  BRest := B;
-  AMaj := StrToIntDef(Copy(ARest, 1, Pos('.', ARest + '.') - 1), 0);
-  Delete(ARest, 1, Pos('.', ARest + '.'));
-  AMin := StrToIntDef(Copy(ARest, 1, Pos('.', ARest + '.') - 1), 0);
-  Delete(ARest, 1, Pos('.', ARest + '.'));
-  APat := StrToIntDef(Copy(ARest, 1, Pos('.', ARest + '.') - 1), 0);
-
-  BMaj := StrToIntDef(Copy(BRest, 1, Pos('.', BRest + '.') - 1), 0);
-  Delete(BRest, 1, Pos('.', BRest + '.'));
-  BMin := StrToIntDef(Copy(BRest, 1, Pos('.', BRest + '.') - 1), 0);
-  Delete(BRest, 1, Pos('.', BRest + '.'));
-  BPat := StrToIntDef(Copy(BRest, 1, Pos('.', BRest + '.') - 1), 0);
-
-  if AMaj <> BMaj then begin Result := AMaj - BMaj; exit; end;
-  if AMin <> BMin then begin Result := AMin - BMin; exit; end;
-  Result := APat - BPat;
 end;
 
 function IsOBSRunning: Boolean;
@@ -441,19 +414,6 @@ begin
     Result := True
   else
     CloseHandle(H);
-end;
-
-function ConfirmUpgrade(const PrevVer, NewVer: String): Boolean;
-var
-  Body: String;
-begin
-  Body :=
-    'Vertical Shorts Plugin ' + PrevVer + ' is currently installed.'#13#10#13#10 +
-    'Setup will upgrade it to Vertical Shorts Plugin ' + NewVer + '.'#13#10#13#10 +
-    'Your scenes, sources, destinations, credentials, schedules, and settings will be preserved.'#13#10 +
-    'You do not need to uninstall first.';
-  Result := TaskDialogMsgBox('Upgrade Vertical Shorts Plugin', Body, mbInformation,
-    MB_OKCANCEL, ['&Upgrade', 'Cancel'], 0) = IDOK;
 end;
 
 (* Ask the user to close OBS / unlock the DLL. Never force-kill OBS. *)
@@ -497,53 +457,6 @@ begin
     end;
     Sleep(500);
   end;
-end;
-
-function CopyFileIfExists(const Src, Dest: String): Boolean;
-begin
-  Result := False;
-  if FileExists(Src) then
-    Result := FileCopy(Src, Dest, False);
-end;
-
-function CreateUpgradeBackup: Boolean;
-var
-  Stamp, Dest, MetaPath, PluginCfg: String;
-begin
-  Result := True;
-  Stamp := GetDateTimeString('yyyymmdd_hhnnss', #0, #0);
-  Dest := ExpandConstant('{localappdata}\VerticalShortsPlugin\upgrade-backups\' + Stamp);
-  GUpgradeBackupDir := Dest;
-  if not ForceDirectories(Dest) then begin
-    Result := False;
-    exit;
-  end;
-
-  MetaPath := ExpandConstant('{app}\data\obs-plugins\obs-shorts-vertical\install-meta.ini');
-  CopyFileIfExists(MetaPath, Dest + '\install-meta.ini');
-  if (GExistingPluginDll <> '') and FileExists(GExistingPluginDll) then
-    SaveStringToFile(Dest + '\previous-dll-path.txt', GExistingPluginDll + #13#10, False);
-
-  PluginCfg := ExpandConstant('{userappdata}\obs-studio\plugin_config\obs-shorts-vertical');
-  if DirExists(PluginCfg) then begin
-    ForceDirectories(Dest + '\plugin_config');
-    CopyFileIfExists(PluginCfg + '\config.json', Dest + '\plugin_config\config.json');
-    CopyFileIfExists(PluginCfg + '\settings.json', Dest + '\plugin_config\settings.json');
-  end;
-
-  SaveStringToFile(Dest + '\upgrade-info.txt',
-    'Product={#MyAppName}'#13#10 +
-    'PreviousVersion=' + GPreviousVersion + #13#10 +
-    'NewVersion={#MyAppVersion}'#13#10 +
-    'AppId={' + '{#MyAppIdGuid}' + '}'#13#10 +
-    'ObsInstallPath=' + GObsInstallPath + #13#10 +
-    'AppDir=' + ExpandConstant('{app}') + #13#10 +
-    'PreviousDll=' + GExistingPluginDll + #13#10 +
-    'UserConfig=OBS scene collection key obs-shorts-vertical (not overwritten)'#13#10 +
-    'Credentials=Windows Credential Manager (not overwritten)'#13#10 +
-    'Note=Backup excludes recordings and large media files.'#13#10,
-    False);
-  AppendInstallLog('Upgrade backup created: ' + Dest);
 end;
 
 function RemoveObsoletePluginBins: Boolean;
@@ -617,7 +530,6 @@ end;
 
 function InitializeSetup: Boolean;
 var
-  Answer: Integer;
   Prev, Cur: String;
 begin
   Result := True;
@@ -635,7 +547,6 @@ begin
 
   GObsInstallPath := DetectObsInstallPath;
   GExistingPluginDll := FindExistingPluginDll;
-  GUpgradeBackupDir := '';
 
   AppendInstallLog('Detected OBS path: ' + GObsInstallPath);
   AppendInstallLog('Existing plugin DLL: ' + GExistingPluginDll);
@@ -656,39 +567,14 @@ begin
   Cur := '{#MyAppVersion}';
   Prev := DetectPreviousVersion;
   GPreviousVersion := Prev;
-  GIsUpgrade := IsUpgradeInstall;
-  if GIsUpgrade then
-    AppendInstallLog('Mode=upgrade PreviousVersion=' + Prev)
+  if IsReplacingExisting then
+    AppendInstallLog('Mode=reinstall PreviousVersion=' + Prev + ' NewVersion=' + Cur)
   else
-    AppendInstallLog('Mode=fresh PreviousVersion=(none)');
+    AppendInstallLog('Mode=fresh PreviousVersion=(none) NewVersion=' + Cur);
 
-  if GIsUpgrade then begin
-    if Prev = '' then
-      Prev := '(unknown)';
-
-    if not ConfirmUpgrade(Prev, Cur) then begin
-      AppendInstallLog('User cancelled upgrade confirmation');
-      Result := False;
-      exit;
-    end;
-
-    if (GPreviousVersion <> '') and (CompareVersionParts(GPreviousVersion, Cur) > 0) then begin
-      Answer := MsgBox(
-        'A newer version (' + GPreviousVersion + ') appears to be installed than this package (' + Cur + ').'#13#10#13#10 +
-        'Installing an older package is not recommended and will not downgrade your configuration schema.'#13#10#13#10 +
-        'Continue anyway?',
-        mbConfirmation, MB_YESNO);
-      if Answer <> IDYES then begin
-        AppendInstallLog('User cancelled downgrade warning');
-        Result := False;
-        exit;
-      end;
-    end;
-  end;
-
-  { Always block while OBS holds our DLL. Fresh installs with no prior DLL can
-    copy while OBS is open; the plugin loads after OBS is restarted. }
-  if (GExistingPluginDll <> '') or GIsUpgrade then begin
+  { Block while OBS holds our DLL. Fresh installs with no prior DLL can copy
+    while OBS is open; the plugin loads after OBS is restarted. }
+  if IsReplacingExisting then begin
     if not EnsureObsClosedAndDllUnlocked(GExistingPluginDll) then
       Result := False;
   end else if IsOBSRunning then begin
@@ -748,8 +634,8 @@ begin
     Space + WizardDirValue + '\data\obs-plugins\obs-shorts-vertical\' + NewLine + NewLine +
     'Install log:' + NewLine +
     Space + GetInstallLogPath('') + NewLine;
-  if GIsUpgrade then
-    Result := Result + NewLine + 'Mode: Upgrade (settings preserved)' + NewLine
+  if IsReplacingExisting then
+    Result := Result + NewLine + 'Mode: Reinstall (OBS scenes/settings preserved)' + NewLine
   else
     Result := Result + NewLine + 'Mode: Fresh install' + NewLine;
 end;
@@ -780,14 +666,6 @@ begin
   if not FileExists(ExpandConstant('{app}\bin\64bit\obs.dll')) then
     AppendInstallLog('WARNING: obs.dll not found next to obs64.exe — OBS install may be incomplete');
 
-  if GIsUpgrade then begin
-    if not CreateUpgradeBackup then begin
-      Result := 'Could not create a lightweight upgrade backup under LocalAppData. Administrator permission may be required.';
-      AppendInstallLog('PrepareToInstall aborted: backup failed');
-      exit;
-    end;
-  end;
-
   RemoveObsoletePluginBins;
   AppendInstallLog('PrepareToInstall ready');
 end;
@@ -812,12 +690,11 @@ begin
       ExpandConstant('{app}\data\obs-plugins\obs-shorts-vertical'), MetaPath);
     SetIniString('Install', 'InstalledTimestampUtc',
       GetDateTimeString('yyyy-mm-dd"T"hh:nn:ss"Z"', #0, #0), MetaPath);
-    SetIniString('Install', 'UpgradeBackup', GUpgradeBackupDir, MetaPath);
     SetIniString('Install', 'InstallLog', GInstallLogPath, MetaPath);
     SetIniString('Install', 'ConfigLocation',
       'OBS scene collection key obs-shorts-vertical + Windows Credential Manager', MetaPath);
     SetIniString('Install', 'Notes',
-      'DLL under obs-plugins\64bit; data under data\obs-plugins\obs-shorts-vertical. User config is never overwritten.', MetaPath);
+      'DLL under obs-plugins\64bit; data under data\obs-plugins\obs-shorts-vertical. User config is never overwritten. No in-app updater.', MetaPath);
 
     if not VerifyInstalledPayload then
       MsgBox(

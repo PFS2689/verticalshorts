@@ -237,10 +237,9 @@ private:
 	void EmitSourceUiChanged();
 	obs_source_t *EnsureVerticalTransitionSource(const QString &name);
 	obs_sceneitem_t *AddSourceToActiveScene(obs_source_t *source, bool fitIfSized);
-	/* Camera-sharing: reuse an existing Video Capture Device (no second HW open). */
+	/* Camera on vertical canvas: obs_scene_add of an existing OBS source
+	 * (Shared OBS Camera) — one hardware session, independent vertical transforms. */
 	void CreateOrShareCaptureSource(const std::string &typeId, const QString &label);
-	void WatchCaptureSourceForShare(obs_source_t *created);
-	void ResolveSharedCapture(OBSSource created);
 	void RemoveVerticalItemsForSource(obs_source_t *source);
 	bool TryShareCaptureFromSettings(const char *typeId, obs_data_t *settings, const char *logReason);
 	void NotifySharedCameraFeed();
