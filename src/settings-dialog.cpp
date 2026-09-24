@@ -134,17 +134,21 @@ SettingsDialog::SettingsDialog(vsp::PluginSettings s, VerticalOutputs *outs, con
 	connect(resetBtn, &QPushButton::clicked, this, &SettingsDialog::OnResetDefaults);
 	btnRow->addWidget(resetBtn);
 	btnRow->addStretch(1);
-	auto *buttons = new QDialogButtonBox(
-		QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
-	connect(buttons, &QDialogButtonBox::accepted, this, &SettingsDialog::OnAccepted);
-	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-	connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, &SettingsDialog::OnApply);
-	btnRow->addWidget(buttons);
+	buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply,
+					 this);
+	applyBtn = buttonBox->button(QDialogButtonBox::Apply);
+	connect(buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::OnAccepted);
+	connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+	connect(applyBtn, &QPushButton::clicked, this, &SettingsDialog::OnApply);
+	btnRow->addWidget(buttonBox);
 	root->addLayout(btnRow);
 
 	vsp::EnsureDefaultDestinations(settings);
 	LoadSecretsIntoDestinations();
+	baselineSettings = settings;
 	SyncFieldsFromSettings();
+	HookDirtyTracking();
+	ClearDirty();
 }
 
 void SettingsDialog::BuildGeneralTab(QWidget *tab)
@@ -187,17 +191,274 @@ void SettingsDialog::BuildAboutTab(QWidget *tab)
 	lay->addStretch(1);
 }
 
+void SettingsDialog::SetApplyEnabled(bool enabled)
+{
+	if (applyBtn)
+		applyBtn->setEnabled(enabled);
+}
+
+void SettingsDialog::ClearDirty()
+{
+	dirty = false;
+	baselineSettings = settings;
+	SetApplyEnabled(false);
+}
+
+void SettingsDialog::MarkDirty()
+{
+	if (loadingFields)
+		return;
+	RecalcDirty();
+}
+
+void SettingsDialog::RecalcDirty()
+{
+	if (loadingFields)
+		return;
+	dirty = UiDiffersFromBaseline();
+	SetApplyEnabled(dirty);
+}
+
+void SettingsDialog::HookDirtyTracking()
+{
+	auto hookCombo = [this](QComboBox *w) {
+		if (!w)
+			return;
+		connect(w, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &SettingsDialog::MarkDirty);
+	};
+	auto hookSpin = [this](QSpinBox *w) {
+		if (!w)
+			return;
+		connect(w, QOverload<int>::of(&QSpinBox::valueChanged), this, &SettingsDialog::MarkDirty);
+	};
+	auto hookEdit = [this](QLineEdit *w) {
+		if (!w)
+			return;
+		connect(w, &QLineEdit::textChanged, this, &SettingsDialog::MarkDirty);
+	};
+	auto hookCheck = [this](QCheckBox *w) {
+		if (!w)
+			return;
+		connect(w, &QCheckBox::toggled, this, &SettingsDialog::MarkDirty);
+	};
+	auto hookDate = [this](QDateEdit *w) {
+		if (!w)
+			return;
+		connect(w, &QDateEdit::dateChanged, this, &SettingsDialog::MarkDirty);
+	};
+	auto hookTime = [this](QTimeEdit *w) {
+		if (!w)
+			return;
+		connect(w, &QTimeEdit::timeChanged, this, &SettingsDialog::MarkDirty);
+	};
+
+	hookCombo(presetCombo);
+	hookSpin(widthSpin);
+	hookSpin(heightSpin);
+	hookEdit(pathEdit);
+	hookCombo(shortClipCombo);
+	hookSpin(shortCustomSpin);
+	hookCombo(longClipCombo);
+	hookEdit(longCustomEdit);
+	hookSpin(longCustomMin);
+	hookSpin(longCustomSec);
+	hookCheck(clipBufferCheck);
+	hookCheck(autoStartBufferCheck);
+	hookCheck(stopIdleCheck);
+	hookSpin(idleTimeoutSpin);
+	hookCheck(saveAvailableCheck);
+	hookCheck(bufferOnLiveCheck);
+	hookCheck(bufferOnRecordCheck);
+
+	hookCheck(autoMaster);
+	hookCheck(startMainStream);
+	hookCheck(startScene);
+	hookCheck(startObs);
+	hookCheck(startSchedule);
+	hookCheck(startCountdown);
+	hookCheck(startVerticalLive);
+	hookCheck(stopMainStream);
+	hookCheck(stopScene);
+	hookCheck(stopDuration);
+	hookCheck(stopScheduleEnd);
+	hookCheck(stopVerticalLive);
+	hookCheck(stopObsShutdown);
+	hookCheck(confirmManualStop);
+	hookCombo(sceneCombo);
+	hookSpin(durationH);
+	hookSpin(durationM);
+	hookSpin(durationS);
+	hookSpin(countdownSpin);
+	hookDate(schedStartDate);
+	hookTime(schedStartTime);
+	hookDate(schedEndDate);
+	hookTime(schedEndTime);
+	hookCombo(schedRepeat);
+	for (QCheckBox *day : weekdayChecks)
+		hookCheck(day);
+
+	hookCombo(destinationPicker);
+	hookEdit(destNameEdit);
+	hookEdit(verticalServerEdit);
+	hookEdit(verticalKeyEdit);
+	hookEdit(usernameEdit);
+	hookEdit(passwordEdit);
+	hookCombo(twitchIngestCombo);
+	if (platformSelector)
+		connect(platformSelector, &PlatformSelector::platformChanged, this, &SettingsDialog::MarkDirty);
+}
+
+bool SettingsDialog::UiDiffersFromBaseline() const
+{
+	if (!presetCombo || !widthSpin || !heightSpin || !pathEdit)
+		return dirty;
+
+	if (static_cast<vsp::CanvasPreset>(presetCombo->currentData().toInt()) != baselineSettings.canvasPreset)
+		return true;
+	if ((uint32_t)widthSpin->value() != baselineSettings.customWidth)
+		return true;
+	if ((uint32_t)heightSpin->value() != baselineSettings.customHeight)
+		return true;
+	if (pathEdit->text().trimmed() != baselineSettings.recordingPath)
+		return true;
+
+	if (shortClipCombo &&
+	    static_cast<vsp::ShortClipPreset>(shortClipCombo->currentData().toInt()) != baselineSettings.shortClipPreset)
+		return true;
+	if (shortCustomSpin && shortCustomSpin->value() != baselineSettings.customShortClipSeconds)
+		return true;
+	if (longClipCombo &&
+	    static_cast<vsp::LongClipPreset>(longClipCombo->currentData().toInt()) != baselineSettings.longClipPreset)
+		return true;
+	if (longCustomMin && longCustomSec) {
+		const int secs = longCustomMin->value() * 60 + longCustomSec->value();
+		if (secs != baselineSettings.customLongClipSeconds)
+			return true;
+	}
+
+	auto checkDiff = [&](QCheckBox *w, bool baseline) {
+		return w && w->isChecked() != baseline;
+	};
+	if (checkDiff(clipBufferCheck, baselineSettings.clipBufferEnabled))
+		return true;
+	if (checkDiff(autoStartBufferCheck, baselineSettings.autoStartClipBuffer))
+		return true;
+	if (checkDiff(stopIdleCheck, baselineSettings.stopBufferWhenIdle))
+		return true;
+	if (idleTimeoutSpin && idleTimeoutSpin->value() != baselineSettings.bufferIdleTimeoutSeconds)
+		return true;
+	if (checkDiff(saveAvailableCheck, baselineSettings.saveAvailableWhenShort))
+		return true;
+	if (checkDiff(bufferOnLiveCheck, baselineSettings.bufferStartOnVerticalLive))
+		return true;
+	if (checkDiff(bufferOnRecordCheck, baselineSettings.bufferStartOnVerticalRecord))
+		return true;
+
+	if (checkDiff(autoMaster, baselineSettings.automationEnabled))
+		return true;
+	if (checkDiff(startMainStream, baselineSettings.autoStartOnMainStream))
+		return true;
+	if (checkDiff(startScene, baselineSettings.autoStartOnScene))
+		return true;
+	if (checkDiff(startObs, baselineSettings.autoStartOnObsStart))
+		return true;
+	if (checkDiff(startSchedule, baselineSettings.autoStartOnSchedule))
+		return true;
+	if (checkDiff(startCountdown, baselineSettings.autoStartOnCountdown))
+		return true;
+	if (checkDiff(startVerticalLive, baselineSettings.autoStartOnVerticalLive))
+		return true;
+	if (checkDiff(stopMainStream, baselineSettings.autoStopOnMainStreamStop))
+		return true;
+	if (checkDiff(stopScene, baselineSettings.autoStopOnSceneInactive))
+		return true;
+	if (checkDiff(stopDuration, baselineSettings.autoStopOnDuration))
+		return true;
+	if (checkDiff(stopScheduleEnd, baselineSettings.autoStopOnScheduleEnd))
+		return true;
+	if (checkDiff(stopVerticalLive, baselineSettings.autoStopOnVerticalLiveStop))
+		return true;
+	if (checkDiff(stopObsShutdown, baselineSettings.autoStopOnObsShutdown))
+		return true;
+	if (checkDiff(confirmManualStop, baselineSettings.confirmManualStopDuringAutomation))
+		return true;
+	if (sceneCombo && sceneCombo->currentData().toString() != baselineSettings.triggerSceneUuid)
+		return true;
+	if (durationH && durationM && durationS) {
+		const int secs = durationH->value() * 3600 + durationM->value() * 60 + durationS->value();
+		if (secs != baselineSettings.autoRecordDurationSeconds)
+			return true;
+	}
+	if (countdownSpin && countdownSpin->value() != baselineSettings.countdownSeconds)
+		return true;
+	if (schedStartDate &&
+	    schedStartDate->date().toString(QStringLiteral("yyyy-MM-dd")) != baselineSettings.scheduleStartDate)
+		return true;
+	if (schedStartTime &&
+	    schedStartTime->time().toString(QStringLiteral("HH:mm")) != baselineSettings.scheduleStartTime)
+		return true;
+	if (schedEndDate &&
+	    schedEndDate->date().toString(QStringLiteral("yyyy-MM-dd")) != baselineSettings.scheduleEndDate)
+		return true;
+	if (schedEndTime && schedEndTime->time().toString(QStringLiteral("HH:mm")) != baselineSettings.scheduleEndTime)
+		return true;
+	if (schedRepeat &&
+	    static_cast<vsp::ScheduleRepeat>(schedRepeat->currentData().toInt()) != baselineSettings.scheduleRepeat)
+		return true;
+	int dayMask = 0;
+	for (int d = 0; d < 7; ++d) {
+		if (weekdayChecks[d] && weekdayChecks[d]->isChecked())
+			dayMask |= (1 << d);
+	}
+	if (dayMask != baselineSettings.scheduleWeekdaysMask)
+		return true;
+
+	if (destinationPicker) {
+		const QString id = destinationPicker->currentData().toString();
+		if (id != baselineSettings.activeDestinationId)
+			return true;
+	}
+	const vsp::StreamDestination baselineDest = vsp::ActiveDestination(baselineSettings);
+	if (platformSelector && SelectedPlatform() != baselineDest.platform)
+		return true;
+	if (destNameEdit && destNameEdit->text().trimmed() != baselineDest.name)
+		return true;
+	if (verticalServerEdit && verticalServerEdit->text().trimmed() != baselineDest.server)
+		return true;
+	if (verticalKeyEdit && verticalKeyEdit->text() != baselineDest.streamKey)
+		return true;
+	if (usernameEdit && usernameEdit->text() != baselineDest.username)
+		return true;
+	if (passwordEdit && passwordEdit->text() != baselineDest.password)
+		return true;
+
+	if (resetAutomation)
+		return true;
+
+	return false;
+}
+
 void SettingsDialog::OnApply()
 {
 	QString error;
 	QString warning;
-	if (!ValidateAndCommit(&error, &warning)) {
+	QString errorField;
+	if (!ValidateAndCommit(&error, &warning, &errorField)) {
+		NavigateToErrorField(errorField);
+		HighlightInvalidField(errorField);
 		if (!error.isEmpty())
 			QMessageBox::warning(this, QString::fromUtf8(obs_module_text("Settings")), error);
+		SetApplyEnabled(true);
+		dirty = true;
 		return;
 	}
+	HighlightInvalidField(QString());
 	if (!warning.isEmpty())
 		QMessageBox::information(this, QString::fromUtf8(obs_module_text("Settings")), warning);
+	emit applied();
+	/* Automation reset is consumed by the dock on applied(); clear so Apply stays off. */
+	resetAutomation = false;
+	ClearDirty();
 }
 
 void SettingsDialog::BuildCanvasTab(QWidget *tab)
@@ -666,6 +927,7 @@ void SettingsDialog::BuildStreamingTab(QWidget *tab)
 
 void SettingsDialog::SyncFieldsFromSettings()
 {
+	loadingFields = true;
 	for (int i = 0; i < presetCombo->count(); ++i) {
 		if (presetCombo->itemData(i).toInt() == (int)settings.canvasPreset) {
 			presetCombo->setCurrentIndex(i);
@@ -776,6 +1038,7 @@ void SettingsDialog::SyncFieldsFromSettings()
 
 	autoStatusLabel->setText(QStringLiteral("Status: %1").arg(
 		automationStatusText.isEmpty() ? vsp::AutomationStatusLabel(automationStatus) : automationStatusText));
+	loadingFields = false;
 }
 
 void SettingsDialog::OnCanvasPresetChanged(int)
@@ -830,6 +1093,7 @@ void SettingsDialog::OnResetDefaults()
 	vsp::EnsureDefaultDestinations(settings);
 	LoadSecretsIntoDestinations();
 	SyncFieldsFromSettings();
+	MarkDirty();
 }
 
 void SettingsDialog::OnResetAutomation()
@@ -861,21 +1125,28 @@ void SettingsDialog::OnResetAutomation()
 	vsp::EnsureDefaultDestinations(settings);
 	LoadSecretsIntoDestinations();
 	SyncFieldsFromSettings();
+	MarkDirty();
 }
 
-bool SettingsDialog::ValidateAndCommit(QString *error, QString *warning)
+bool SettingsDialog::ValidateAndCommit(QString *error, QString *warning, QString *errorField)
 {
+	auto fail = [&](const char *field) -> bool {
+		if (errorField)
+			*errorField = QString::fromUtf8(field);
+		return false;
+	};
+
 	settings.canvasPreset = static_cast<vsp::CanvasPreset>(presetCombo->currentData().toInt());
 	settings.customWidth = (uint32_t)widthSpin->value();
 	settings.customHeight = (uint32_t)heightSpin->value();
 	if (!vsp::ValidateCanvasSize(widthSpin->value(), heightSpin->value(), error))
-		return false;
+		return fail("canvas");
 
 	settings.shortClipPreset = static_cast<vsp::ShortClipPreset>(shortClipCombo->currentData().toInt());
 	settings.customShortClipSeconds = shortCustomSpin->value();
 	if (settings.shortClipPreset == vsp::ShortClipPreset::Custom &&
 	    !vsp::ValidateShortClipSeconds(settings.customShortClipSeconds, error))
-		return false;
+		return fail("shortclip");
 
 	settings.longClipPreset = static_cast<vsp::LongClipPreset>(longClipCombo->currentData().toInt());
 	if (settings.longClipPreset == vsp::LongClipPreset::Custom) {
@@ -884,13 +1155,13 @@ bool SettingsDialog::ValidateAndCommit(QString *error, QString *warning)
 		if (!mmss.isEmpty() && mmss.contains(QLatin1Char(':'))) {
 			secs = vsp::ParseMmSs(mmss, error);
 			if (secs < 0)
-				return false;
+				return fail("longclip");
 		} else {
 			secs = longCustomMin->value() * 60 + longCustomSec->value();
 		}
 		QString warn;
 		if (!vsp::ValidateLongClipSeconds(secs, error, &warn))
-			return false;
+			return fail("longclip");
 		settings.customLongClipSeconds = secs;
 		if (warning && !warn.isEmpty())
 			*warning = warn;
@@ -898,7 +1169,7 @@ bool SettingsDialog::ValidateAndCommit(QString *error, QString *warning)
 
 	settings.recordingPath = pathEdit->text().trimmed();
 	if (!vsp::ValidateRecordingPath(settings.recordingPath, error))
-		return false;
+		return fail("path");
 	settings.clipBufferEnabled = clipBufferCheck->isChecked();
 	if (autoStartBufferCheck)
 		settings.autoStartClipBuffer = autoStartBufferCheck->isChecked();
@@ -940,7 +1211,7 @@ bool SettingsDialog::ValidateAndCommit(QString *error, QString *warning)
 
 	settings.autoRecordDurationSeconds = durationH->value() * 3600 + durationM->value() * 60 + durationS->value();
 	if (settings.autoStopOnDuration && !vsp::ValidateAutoDurationSeconds(settings.autoRecordDurationSeconds, error))
-		return false;
+		return fail("duration");
 
 	settings.countdownSeconds = countdownSpin->value();
 	settings.scheduleStartDate = schedStartDate->date().toString(QStringLiteral("yyyy-MM-dd"));
@@ -957,7 +1228,7 @@ bool SettingsDialog::ValidateAndCommit(QString *error, QString *warning)
 	if (settings.scheduleRepeat == vsp::ScheduleRepeat::Weekdays && dayMask == 0) {
 		if (error)
 			*error = QString::fromUtf8(obs_module_text("RepeatDaysRequired"));
-		return false;
+		return fail("weekdays");
 	}
 
 	return true;
@@ -967,13 +1238,22 @@ void SettingsDialog::OnAccepted()
 {
 	QString error;
 	QString warning;
-	if (!ValidateAndCommit(&error, &warning)) {
+	QString errorField;
+	if (!ValidateAndCommit(&error, &warning, &errorField)) {
+		NavigateToErrorField(errorField);
+		HighlightInvalidField(errorField);
 		QMessageBox::warning(this, QString::fromUtf8(obs_module_text("Settings")), error);
+		SetApplyEnabled(true);
+		dirty = true;
 		return;
 	}
+	HighlightInvalidField(QString());
 	if (!warning.isEmpty()) {
 		QMessageBox::information(this, QString::fromUtf8(obs_module_text("Settings")), warning);
 	}
+	emit applied();
+	resetAutomation = false;
+	ClearDirty();
 	accept();
 }
 
@@ -1320,6 +1600,7 @@ void SettingsDialog::OnSaveDestination()
 	QMessageBox::information(this, QString::fromUtf8(obs_module_text("SaveDestination")),
 				 QString::fromUtf8(obs_module_text("DestinationSaved")));
 	SyncStreamingFields();
+	MarkDirty();
 }
 
 void SettingsDialog::OnClearCredentials()
@@ -1339,6 +1620,7 @@ void SettingsDialog::OnClearCredentials()
 	verticalKeyEdit->clear();
 	passwordEdit->clear();
 	UpdateDestinationStatusCard();
+	MarkDirty();
 }
 
 void SettingsDialog::OnAddDestination()
@@ -1349,6 +1631,7 @@ void SettingsDialog::OnAddDestination()
 	settings.destinations.push_back(d);
 	settings.activeDestinationId = d.id;
 	SyncStreamingFields();
+	MarkDirty();
 }
 
 void SettingsDialog::OnRenameDestination()
@@ -1362,6 +1645,7 @@ void SettingsDialog::OnRenameDestination()
 	destNameEdit->setText(name.trimmed());
 	PersistActiveDestinationSecrets();
 	SyncStreamingFields();
+	MarkDirty();
 }
 
 void SettingsDialog::OnDeleteDestination()
@@ -1384,17 +1668,69 @@ void SettingsDialog::OnDeleteDestination()
 				    settings.destinations.end());
 	settings.activeDestinationId = settings.destinations.first().id;
 	SyncStreamingFields();
+	MarkDirty();
+}
+
+void SettingsDialog::NavigateToErrorField(const QString &field)
+{
+	if (!categories || field.isEmpty())
+		return;
+	int row = -1;
+	if (field == QStringLiteral("canvas"))
+		row = 1; /* Vertical Canvas */
+	else if (field == QStringLiteral("path"))
+		row = 2; /* Vertical Recording */
+	else if (field == QStringLiteral("shortclip") || field == QStringLiteral("longclip"))
+		row = 3; /* Vertical Clips */
+	else if (field == QStringLiteral("duration") || field == QStringLiteral("weekdays"))
+		row = 4; /* Recording Automation */
+	else if (field == QStringLiteral("server") || field == QStringLiteral("key"))
+		row = streamingTabIndex >= 0 ? streamingTabIndex : 5;
+	if (row >= 0 && row < categories->count())
+		categories->setCurrentRow(row);
 }
 
 void SettingsDialog::HighlightInvalidField(const QString &field)
 {
-	auto mark = [](QLineEdit *e, bool bad) {
+	auto markEdit = [](QLineEdit *e, bool bad) {
 		if (!e)
 			return;
 		e->setStyleSheet(bad ? QStringLiteral("QLineEdit { border: 1px solid #c62828; }") : QString());
 	};
-	mark(verticalServerEdit, field == QStringLiteral("server"));
-	mark(verticalKeyEdit, field == QStringLiteral("key"));
+	auto markSpin = [](QSpinBox *e, bool bad) {
+		if (!e)
+			return;
+		e->setStyleSheet(bad ? QStringLiteral("QSpinBox { border: 1px solid #c62828; }") : QString());
+	};
+
+	markSpin(widthSpin, field == QStringLiteral("canvas"));
+	markSpin(heightSpin, field == QStringLiteral("canvas"));
+	markEdit(pathEdit, field == QStringLiteral("path"));
+	markSpin(shortCustomSpin, field == QStringLiteral("shortclip"));
+	markEdit(longCustomEdit, field == QStringLiteral("longclip"));
+	markSpin(longCustomMin, field == QStringLiteral("longclip"));
+	markSpin(longCustomSec, field == QStringLiteral("longclip"));
+	markSpin(durationH, field == QStringLiteral("duration"));
+	markSpin(durationM, field == QStringLiteral("duration"));
+	markSpin(durationS, field == QStringLiteral("duration"));
+	for (QCheckBox *day : weekdayChecks) {
+		if (!day)
+			continue;
+		day->setStyleSheet(field == QStringLiteral("weekdays")
+					   ? QStringLiteral("QCheckBox { color: #c62828; }")
+					   : QString());
+	}
+	markEdit(verticalServerEdit, field == QStringLiteral("server"));
+	markEdit(verticalKeyEdit, field == QStringLiteral("key"));
+
+	if (field == QStringLiteral("path") && pathEdit)
+		pathEdit->setFocus(Qt::OtherFocusReason);
+	else if (field == QStringLiteral("server") && verticalServerEdit)
+		verticalServerEdit->setFocus(Qt::OtherFocusReason);
+	else if (field == QStringLiteral("key") && verticalKeyEdit)
+		verticalKeyEdit->setFocus(Qt::OtherFocusReason);
+	else if (field == QStringLiteral("canvas") && widthSpin)
+		widthSpin->setFocus(Qt::OtherFocusReason);
 }
 
 void SettingsDialog::OnTestDestination()

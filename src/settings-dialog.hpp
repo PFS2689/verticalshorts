@@ -18,6 +18,7 @@ class QStackedWidget;
 class QDateEdit;
 class QTimeEdit;
 class QPushButton;
+class QDialogButtonBox;
 class QTextEdit;
 class QGroupBox;
 class QFrame;
@@ -36,6 +37,10 @@ public:
 	vsp::PluginSettings result() const { return settings; }
 	bool WantsAutomationReset() const { return resetAutomation; }
 	void FocusStreamingTab();
+
+signals:
+	/* Emitted after a successful Apply or OK commit; dialog stays open for Apply. */
+	void applied();
 
 protected:
 	void hideEvent(QHideEvent *event) override;
@@ -58,6 +63,9 @@ private slots:
 	void OnDeleteDestination();
 	void OnOpenPlatformHelp();
 	void OnAccepted();
+	void OnApply();
+	void MarkDirty();
+	void RecalcDirty();
 
 private:
 	void BuildGeneralTab(QWidget *tab);
@@ -68,7 +76,6 @@ private:
 	void BuildStreamingTab(QWidget *tab);
 	void BuildAudioTab(QWidget *tab);
 	void BuildAboutTab(QWidget *tab);
-	void OnApply();
 	int AddCategory(const char *localeKey, const char *fallback, QWidget *page);
 	void SyncFieldsFromSettings();
 	void SyncStreamingFields();
@@ -77,14 +84,20 @@ private:
 	void UpdateSelectedPlatformHero();
 	void AnimatePlatformPanel();
 	void ApplyPlatformFieldVisibility();
-	bool ValidateAndCommit(QString *error, QString *warning);
+	bool ValidateAndCommit(QString *error, QString *warning, QString *errorField = nullptr);
 	void PersistActiveDestinationSecrets(bool applyPlatformFromCombo = true);
 	void LoadSecretsIntoDestinations();
 	vsp::StreamDestination CurrentUiDestination(bool applyPlatformFromCombo = true) const;
 	void HighlightInvalidField(const QString &field);
+	void NavigateToErrorField(const QString &field);
+	void HookDirtyTracking();
+	void ClearDirty();
+	void SetApplyEnabled(bool enabled);
+	bool UiDiffersFromBaseline() const;
 	vsp::StreamPlatform SelectedPlatform() const;
 
 	vsp::PluginSettings settings;
+	vsp::PluginSettings baselineSettings;
 	VerticalOutputs *outputs = nullptr;
 	QStringList sceneNames;
 	QStringList sceneUuids;
@@ -92,6 +105,10 @@ private:
 	QString automationStatusText;
 	bool resetAutomation = false;
 	bool suppressPlatformPrompt = false;
+	bool loadingFields = false;
+	bool dirty = false;
+	QDialogButtonBox *buttonBox = nullptr;
+	QPushButton *applyBtn = nullptr;
 
 	/* Canvas */
 	QComboBox *presetCombo = nullptr;

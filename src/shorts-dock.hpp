@@ -92,7 +92,12 @@ public:
 	void RequestRemoveScene();
 	void RequestDuplicateScene();
 	void RequestRenameScene();
+	void RequestRenameSceneTo(const QString &name);
 	void RequestSelectScene(const QString &uuid);
+	void RequestSceneMoveUp();
+	void RequestSceneMoveDown();
+	void RequestSceneMoveTop();
+	void RequestSceneMoveBottom();
 	void PopulateScenesList(QListWidget *list);
 
 	void RequestAddSource();
@@ -186,6 +191,7 @@ private slots:
 	void OnCanvasPresetChanged(int index);
 	void OnSettings();
 	void OpenSettingsStreaming(bool focusStreaming = true);
+	void ApplySettingsResult(const vsp::PluginSettings &next, bool wantsAutomationReset);
 	void OnStreamingChanged(bool active);
 	void OnRecordingChanged(bool active);
 	void OnClipSaved(const QString &path, ClipKind kind);

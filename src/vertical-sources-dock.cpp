@@ -6,19 +6,26 @@
 #include <QAbstractItemModel>
 #include <QAbstractItemView>
 #include <QContextMenuEvent>
+#include <QFontMetrics>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
 #include <QMenu>
 #include <QMouseEvent>
-#include <QPalette>
+#include <QPainter>
+#include <QPaintEvent>
+#include <QResizeEvent>
 #include <QSize>
 #include <QSizePolicy>
+#include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
 
 namespace {
+
+constexpr int kNameRole = Qt::UserRole + 4;
 
 QString Translate(const char *key)
 {
@@ -31,9 +38,82 @@ QToolButton *MakeToolButton(QWidget *parent, const QString &text, const QString 
 	btn->setText(text);
 	btn->setToolTip(tip);
 	btn->setAutoRaise(true);
-	btn->setFixedSize(28, 24);
 	return btn;
 }
+
+QIcon VisibilityIcon(const QWidget *w, bool visible)
+{
+	const QStyle *style = w->style();
+	if (visible) {
+		QIcon icon = QIcon::fromTheme(QStringLiteral("view-visible"));
+		if (icon.isNull())
+			icon = QIcon::fromTheme(QStringLiteral("visibility"));
+		if (icon.isNull())
+			icon = style->standardIcon(QStyle::SP_DialogYesButton);
+		return icon;
+	}
+	QIcon icon = QIcon::fromTheme(QStringLiteral("view-hidden"));
+	if (icon.isNull())
+		icon = QIcon::fromTheme(QStringLiteral("hint"));
+	if (icon.isNull())
+		icon = style->standardIcon(QStyle::SP_DialogNoButton);
+	return icon;
+}
+
+QIcon LockIcon(const QWidget *w, bool locked)
+{
+	const QStyle *style = w->style();
+	if (locked) {
+		QIcon icon = QIcon::fromTheme(QStringLiteral("object-locked"));
+		if (icon.isNull())
+			icon = QIcon::fromTheme(QStringLiteral("lock"));
+		if (icon.isNull())
+			icon = style->standardIcon(QStyle::SP_BrowserStop);
+		return icon;
+	}
+	QIcon icon = QIcon::fromTheme(QStringLiteral("object-unlocked"));
+	if (icon.isNull())
+		icon = QIcon::fromTheme(QStringLiteral("unlock"));
+	if (icon.isNull())
+		icon = style->standardIcon(QStyle::SP_ArrowForward);
+	return icon;
+}
+
+/* Eliding label: takes remaining row width; never paints over siblings. */
+class ElidedNameLabel : public QLabel {
+public:
+	explicit ElidedNameLabel(QWidget *parent = nullptr) : QLabel(parent)
+	{
+		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+		setAttribute(Qt::WA_TransparentForMouseEvents, true);
+		setTextFormat(Qt::PlainText);
+		setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+	}
+
+	void setFullText(const QString &text)
+	{
+		fullText = text;
+		updateElide();
+	}
+
+protected:
+	void resizeEvent(QResizeEvent *event) override
+	{
+		QLabel::resizeEvent(event);
+		updateElide();
+	}
+
+private:
+	void updateElide()
+	{
+		const QFontMetrics fm(font());
+		const QString elided = fm.elidedText(fullText, Qt::ElideRight, qMax(0, width()));
+		QLabel::setText(elided);
+		setToolTip(elided != fullText ? fullText : QString());
+	}
+
+	QString fullText;
+};
 
 class SourceRowWidget : public QWidget {
 public:
@@ -43,29 +123,48 @@ public:
 		  itemId(itemId_),
 		  workspace(workspace_)
 	{
+		setObjectName(QStringLiteral("VerticalSourceRow"));
+		setAutoFillBackground(false);
+
 		auto *lay = new QHBoxLayout(this);
-		lay->setContentsMargins(2, 0, 4, 0);
-		lay->setSpacing(4);
+		lay->setContentsMargins(4, 1, 6, 1);
+		lay->setSpacing(6);
+		lay->setAlignment(Qt::AlignVCenter);
 
-		visBtn = MakeToolButton(this, visible ? QStringLiteral("◉") : QStringLiteral("○"),
-					Translate("ToggleVisible"));
-		visBtn->setFixedSize(22, 20);
-		lockBtn = MakeToolButton(this, locked ? QStringLiteral("■") : QStringLiteral("□"),
-					 Translate("ToggleLock"));
-		lockBtn->setFixedSize(22, 20);
+		const int iconPx = qMax(16, fontMetrics().height());
+		const QSize iconSize(iconPx, iconPx);
 
-		auto *label = new QLabel(name, this);
-		label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-		label->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+		visBtn = new QToolButton(this);
+		visBtn->setObjectName(QStringLiteral("SourceVisibilityButton"));
+		visBtn->setAutoRaise(true);
+		visBtn->setFocusPolicy(Qt::NoFocus);
+		visBtn->setIconSize(iconSize);
+		visBtn->setFixedSize(iconPx + 6, iconPx + 4);
+		visBtn->setIcon(VisibilityIcon(this, visible));
+		visBtn->setToolTip(Translate(visible ? "HideSource" : "ShowSource"));
+		visBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+		lockBtn = new QToolButton(this);
+		lockBtn->setObjectName(QStringLiteral("SourceLockButton"));
+		lockBtn->setAutoRaise(true);
+		lockBtn->setFocusPolicy(Qt::NoFocus);
+		lockBtn->setIconSize(iconSize);
+		lockBtn->setFixedSize(iconPx + 6, iconPx + 4);
+		lockBtn->setIcon(LockIcon(this, locked));
+		lockBtn->setToolTip(Translate(locked ? "UnlockSource" : "LockSource"));
+		lockBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+		nameLabel = new ElidedNameLabel(this);
+		nameLabel->setFullText(name);
 		if (!visible) {
-			QPalette pal = label->palette();
+			QPalette pal = nameLabel->palette();
 			pal.setColor(QPalette::WindowText, pal.color(QPalette::Disabled, QPalette::WindowText));
-			label->setPalette(pal);
+			nameLabel->setPalette(pal);
 		}
 
-		lay->addWidget(visBtn, 0);
-		lay->addWidget(lockBtn, 0);
-		lay->addWidget(label, 1);
+		lay->addWidget(visBtn, 0, Qt::AlignVCenter);
+		lay->addWidget(lockBtn, 0, Qt::AlignVCenter);
+		lay->addWidget(nameLabel, 1);
 
 		connect(visBtn, &QToolButton::clicked, this, [this]() {
 			if (workspace)
@@ -75,6 +174,12 @@ public:
 			if (workspace)
 				workspace->RequestToggleSourceLockById(itemId);
 		});
+	}
+
+	QSize sizeHint() const override
+	{
+		const int h = qMax(visBtn ? visBtn->sizeHint().height() : 20, fontMetrics().height()) + 6;
+		return QSize(200, h);
 	}
 
 protected:
@@ -92,6 +197,7 @@ private:
 	ShortsDock *workspace = nullptr;
 	QToolButton *visBtn = nullptr;
 	QToolButton *lockBtn = nullptr;
+	ElidedNameLabel *nameLabel = nullptr;
 };
 
 } // namespace
@@ -127,7 +233,9 @@ void VerticalSourcesDock::BuildUI()
 	sourcesList->setContextMenuPolicy(Qt::CustomContextMenu);
 	sourcesList->setAlternatingRowColors(true);
 	sourcesList->setUniformItemSizes(true);
-	sourcesList->setSpacing(1);
+	sourcesList->setSpacing(0);
+	sourcesList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	sourcesList->setTextElideMode(Qt::ElideNone);
 
 	connect(sourcesList, &QListWidget::itemSelectionChanged, this, &VerticalSourcesDock::OnSelectionChanged);
 	connect(sourcesList, &QListWidget::itemDoubleClicked, this, &VerticalSourcesDock::OnItemDoubleClicked);
@@ -176,10 +284,15 @@ void VerticalSourcesDock::RebuildRowWidgets()
 		const qint64 id = item->data(Qt::UserRole).toLongLong();
 		const bool visible = item->data(Qt::UserRole + 1).toBool();
 		const bool locked = item->data(Qt::UserRole + 2).toBool();
-		const QString name = item->text();
-		/* Keep text for accessibility/DnD; widget shows the OBS-like row. */
-		item->setSizeHint(QSize(item->sizeHint().width(), 26));
-		sourcesList->setItemWidget(item, new SourceRowWidget(id, visible, locked, name, workspace, sourcesList));
+		const QString name = item->data(kNameRole).toString();
+		/* Critical: keep DisplayRole empty so QListWidget does not paint text over the row widget. */
+		item->setText(QString());
+		item->setData(Qt::DisplayRole, QVariant());
+		item->setToolTip(name);
+
+		auto *row = new SourceRowWidget(id, visible, locked, name, workspace, sourcesList);
+		item->setSizeHint(row->sizeHint());
+		sourcesList->setItemWidget(item, row);
 	}
 }
 
@@ -288,7 +401,8 @@ void VerticalSourcesDock::ShowSourceContextMenu(const QPoint &globalPos)
 	menu.addSeparator();
 
 	QMenu *transformMenu = menu.addMenu(Translate("Transform"));
-	QAction *editTf = transformMenu->addAction(Translate("EditTransform"), workspace, &ShortsDock::RequestEditTransform);
+	QAction *editTf =
+		transformMenu->addAction(Translate("EditTransform"), workspace, &ShortsDock::RequestEditTransform);
 	editTf->setToolTip(Translate("EditTransformTip"));
 	transformMenu->addAction(Translate("CopyTransform"), workspace, &ShortsDock::RequestCopyTransform);
 	QAction *pasteTf =
@@ -318,24 +432,16 @@ void VerticalSourcesDock::ShowSourceContextMenu(const QPoint &globalPos)
 	menu.addSeparator();
 	menu.addAction(Translate("RenameSource"), workspace, &ShortsDock::RequestRenameSource);
 	menu.addAction(Translate("DuplicateSource"), workspace, &ShortsDock::RequestDuplicateSource);
-	menu.addAction(Translate("CopySource"), workspace, &ShortsDock::RequestCopySource);
-	QAction *pasteSrc = menu.addAction(Translate("PasteSource"), workspace, &ShortsDock::RequestPasteSource);
-	pasteSrc->setEnabled(workspace->HasSourceClipboard());
+	menu.addAction(visible ? Translate("HideSource") : Translate("ShowSource"), workspace,
+		       &ShortsDock::RequestToggleSourceVisible);
+	menu.addAction(locked ? Translate("UnlockSource") : Translate("LockSource"), workspace,
+		       &ShortsDock::RequestToggleSourceLock);
 
 	menu.addSeparator();
-	QAction *lockAct = menu.addAction(locked ? Translate("UnlockSource") : Translate("LockSource"), workspace,
-					  &ShortsDock::RequestToggleSourceLock);
-	QAction *visAct = menu.addAction(visible ? Translate("HideSource") : Translate("ShowSource"), workspace,
-					 &ShortsDock::RequestToggleSourceVisible);
-	Q_UNUSED(lockAct);
-	Q_UNUSED(visAct);
-
-	menu.addSeparator();
-	QMenu *orderMenu = menu.addMenu(Translate("Order"));
-	orderMenu->addAction(Translate("MoveSourceUp"), workspace, &ShortsDock::RequestSourceMoveUp);
-	orderMenu->addAction(Translate("MoveSourceDown"), workspace, &ShortsDock::RequestSourceMoveDown);
-	orderMenu->addAction(Translate("MoveSourceTop"), workspace, &ShortsDock::RequestSourceMoveTop);
-	orderMenu->addAction(Translate("MoveSourceBottom"), workspace, &ShortsDock::RequestSourceMoveBottom);
+	menu.addAction(Translate("MoveSourceUp"), workspace, &ShortsDock::RequestSourceMoveUp);
+	menu.addAction(Translate("MoveSourceDown"), workspace, &ShortsDock::RequestSourceMoveDown);
+	menu.addAction(Translate("MoveSourceTop"), workspace, &ShortsDock::RequestSourceMoveTop);
+	menu.addAction(Translate("MoveSourceBottom"), workspace, &ShortsDock::RequestSourceMoveBottom);
 
 	menu.addSeparator();
 	menu.addAction(Translate("RemoveSource"), workspace, &ShortsDock::RequestRemoveSource);

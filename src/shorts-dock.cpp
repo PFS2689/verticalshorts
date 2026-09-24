@@ -1159,7 +1159,66 @@ void ShortsDock::RequestRenameScene()
 					     QLineEdit::Normal, QString::fromUtf8(obs_source_get_name(src)), &ok);
 	if (!ok || name.trimmed().isEmpty())
 		return;
-	obs_source_set_name(src, name.trimmed().toUtf8().constData());
+	RequestRenameSceneTo(name);
+}
+
+void ShortsDock::RequestRenameSceneTo(const QString &name)
+{
+	const QString trimmed = name.trimmed();
+	if (trimmed.isEmpty())
+		return;
+	const QString uuid = ActiveSceneUuid();
+	obs_scene_t *sc = FindVerticalSceneByUuid(uuid);
+	if (!sc)
+		return;
+	obs_source_t *src = obs_scene_get_source(sc);
+	if (!src)
+		return;
+	if (QString::fromUtf8(obs_source_get_name(src)) == trimmed)
+		return;
+	obs_source_set_name(src, trimmed.toUtf8().constData());
+	EmitSceneUiChanged();
+}
+
+void ShortsDock::RequestSceneMoveUp()
+{
+	const QString uuid = ActiveSceneUuid();
+	const int idx = sceneOrder.indexOf(uuid);
+	if (idx <= 0)
+		return;
+	sceneOrder.swapItemsAt(idx, idx - 1);
+	EmitSceneUiChanged();
+}
+
+void ShortsDock::RequestSceneMoveDown()
+{
+	const QString uuid = ActiveSceneUuid();
+	const int idx = sceneOrder.indexOf(uuid);
+	if (idx < 0 || idx >= sceneOrder.size() - 1)
+		return;
+	sceneOrder.swapItemsAt(idx, idx + 1);
+	EmitSceneUiChanged();
+}
+
+void ShortsDock::RequestSceneMoveTop()
+{
+	const QString uuid = ActiveSceneUuid();
+	const int idx = sceneOrder.indexOf(uuid);
+	if (idx <= 0)
+		return;
+	sceneOrder.removeAt(idx);
+	sceneOrder.prepend(uuid);
+	EmitSceneUiChanged();
+}
+
+void ShortsDock::RequestSceneMoveBottom()
+{
+	const QString uuid = ActiveSceneUuid();
+	const int idx = sceneOrder.indexOf(uuid);
+	if (idx < 0 || idx >= sceneOrder.size() - 1)
+		return;
+	sceneOrder.removeAt(idx);
+	sceneOrder.append(uuid);
 	EmitSceneUiChanged();
 }
 
@@ -1185,11 +1244,15 @@ void ShortsDock::PopulateSourcesList(QListWidget *list)
 		obs_sceneitem_t *item = *it;
 		obs_source_t *source = obs_sceneitem_get_source(item);
 		const QString name = QString::fromUtf8(obs_source_get_name(source));
-		auto *row = new QListWidgetItem(name);
+		/* Display text stays empty — the row widget paints the name.
+		 * Leaving text set causes QListWidget to paint it under/over the widget (overlap). */
+		auto *row = new QListWidgetItem();
 		row->setData(Qt::UserRole, QVariant::fromValue((qint64)obs_sceneitem_get_id(item)));
 		row->setData(Qt::UserRole + 1, obs_sceneitem_visible(item));
 		row->setData(Qt::UserRole + 2, obs_sceneitem_locked(item));
 		row->setData(Qt::UserRole + 3, source ? obs_source_configurable(source) : false);
+		row->setData(Qt::UserRole + 4, name);
+		row->setToolTip(name);
 		if (obs_sceneitem_selected(item))
 			row->setSelected(true);
 		list->addItem(row);
@@ -3228,29 +3291,18 @@ void ShortsDock::OnSettings()
 	OpenSettingsStreaming(false);
 }
 
-void ShortsDock::OpenSettingsStreaming(bool focusStreaming)
+void ShortsDock::ApplySettingsResult(const vsp::PluginSettings &next, bool wantsAutomationReset)
 {
-	QStringList names, uuids;
-	CollectSceneLists(names, uuids);
-	const QString statusText = automation ? automation->StatusText() : QString();
-	const auto status = automation ? automation->Status() : vsp::AutomationStatus::Disabled;
-
-	SettingsDialog dlg(settings, outputs.get(), names, uuids, status, statusText, this);
-	if (focusStreaming)
-		dlg.FocusStreamingTab();
-	if (dlg.exec() != QDialog::Accepted)
-		return;
-
 	const uint32_t oldW = verticalWidth;
 	const uint32_t oldH = verticalHeight;
-	settings = dlg.result();
+	settings = next;
 	ApplyCanvasFromSettings();
 
 	bool restartBuffer = false;
 	if (outputs)
 		outputs->ApplySettings(settings, &restartBuffer);
 
-	if (dlg.WantsAutomationReset() && automation)
+	if (wantsAutomationReset && automation)
 		automation->ResetRuntimeState();
 	if (automation)
 		automation->ApplySettings(settings);
@@ -3279,6 +3331,25 @@ void ShortsDock::OpenSettingsStreaming(bool focusStreaming)
 
 	SyncCanvasPresetControl();
 	SyncClipPresetControls();
+}
+
+void ShortsDock::OpenSettingsStreaming(bool focusStreaming)
+{
+	QStringList names, uuids;
+	CollectSceneLists(names, uuids);
+	const QString statusText = automation ? automation->StatusText() : QString();
+	const auto status = automation ? automation->Status() : vsp::AutomationStatus::Disabled;
+
+	SettingsDialog dlg(settings, outputs.get(), names, uuids, status, statusText, this);
+	if (focusStreaming)
+		dlg.FocusStreamingTab();
+
+	/* Apply updates runtime immediately without closing; OK also emits applied then closes.
+	 * Cancel discards unapplied edits (already-persisted destination secrets remain). */
+	connect(&dlg, &SettingsDialog::applied, this, [&]() {
+		ApplySettingsResult(dlg.result(), dlg.WantsAutomationReset());
+	});
+	dlg.exec();
 }
 
 void ShortsDock::OnStreamingChanged(bool active)
