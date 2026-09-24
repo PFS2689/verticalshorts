@@ -294,18 +294,29 @@ jobs:
             throw 'Output EXE does not look like an Inno Setup installer'
           }
           Write-Host 'Inno Setup signature string found in installer'
-          # Required payload markers
-          foreach ($need in @('obs-shorts-vertical.dll', 'en-US.ini', 'obs-plugins')) {
-            if ($text -notmatch [regex]::Escape($need)) {
-              throw "Setup.exe missing expected payload marker: $need"
-            }
+
+          # Confirm staged payload that ISCC packaged (filenames are LZMA-compressed inside Setup.exe,
+          # so do not require them as plain ASCII in the binary).
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'release\staging\obs-shorts-vertical'
+          $required = @(
+            (Join-Path $stage 'bin\64bit\obs-shorts-vertical.dll'),
+            (Join-Path $stage 'data\locale\en-US.ini'),
+            (Join-Path $stage 'INSTALL.txt')
+          )
+          foreach ($p in $required) {
+            if (-not (Test-Path $p)) { throw "Staged installer payload missing: $p" }
+            Write-Host "OK staged payload: $p ($((Get-Item $p).Length) bytes)"
           }
-          Write-Host 'Setup.exe contains required plugin payload markers'
+
           # Forbidden leftover upgrade/updater markers from the removed upgrade system
-          foreach ($bad in @('ConfirmUpgrade', 'CreateUpgradeBackup', 'GIsUpgrade', 'IsUpgradeInstall', 'upgrade-backups', 'updater.exe')) {
+          foreach ($bad in @('ConfirmUpgrade', 'CreateUpgradeBackup', 'GIsUpgrade', 'IsUpgradeInstall', 'upgrade-backups')) {
             if ($text.Contains($bad)) {
               throw "Setup.exe still contains forbidden updater/upgrade marker: $bad"
             }
+          }
+          # updater.exe as a packaged helper name (avoid substring false positives)
+          if ($text -match '(?i)(^|[^A-Za-z0-9_-])updater\.exe([^A-Za-z0-9_]|$)') {
+            throw 'Setup.exe still contains forbidden updater.exe marker'
           }
           Write-Host 'Setup.exe updater/upgrade remnant scan passed'
 
