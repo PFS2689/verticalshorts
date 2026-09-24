@@ -1,0 +1,178 @@
+{
+  "version": 8,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "template",
+      "hidden": true,
+      "cacheVariables": {
+        "ENABLE_FRONTEND_API": true,
+        "ENABLE_QT": true
+      }
+    },
+    {
+      "name": "windows-x64",
+      "displayName": "Windows x64",
+      "description": "Build for Windows x64",
+      "inherits": ["template"],
+      "binaryDir": "${sourceDir}/build_x64",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64,version=10.0.22621",
+      "warnings": {"dev": true, "deprecated": true}
+    },
+    {
+      "name": "windows-release",
+      "inherits": ["windows-x64"],
+      "displayName": "Windows x64 Release (no tests)",
+      "description": "Release plugin artifacts without unit-test targets",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF",
+        "VSP_BUILD_TESTS": "OFF",
+        "CMAKE_COMPILE_WARNING_AS_ERROR": false
+      }
+    },
+    {
+      "name": "windows-debug",
+      "inherits": ["windows-x64"],
+      "displayName": "Windows x64 Debug",
+      "description": "Debug configuration for local development",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "VSP_BUILD_TESTS": "ON",
+        "CMAKE_COMPILE_WARNING_AS_ERROR": false
+      }
+    },
+    {
+      "name": "windows-tests",
+      "inherits": ["windows-x64"],
+      "displayName": "Windows x64 Tests",
+      "description": "Configure with unit tests enabled for ctest",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "VSP_BUILD_TESTS": "ON",
+        "CMAKE_COMPILE_WARNING_AS_ERROR": false
+      }
+    },
+    {
+      "name": "windows-ci-x64",
+      "inherits": ["windows-x64"],
+      "displayName": "Windows x64 CI build",
+      "description": "Build for Windows x64 on CI (tests enabled)",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "VSP_BUILD_TESTS": "ON",
+        "CMAKE_COMPILE_WARNING_AS_ERROR": false
+      }
+    },
+    {
+      "name": "ubuntu-x86_64",
+      "displayName": "Ubuntu x86_64",
+      "description": "Build for Ubuntu x86_64",
+      "inherits": ["template"],
+      "binaryDir": "${sourceDir}/build_x86_64",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "generator": "Ninja",
+      "warnings": {"dev": true, "deprecated": true},
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_INSTALL_LIBDIR": "lib/CMAKE_SYSTEM_PROCESSOR-linux-gnu"
+      }
+    },
+    {
+      "name": "ubuntu-ci-x86_64",
+      "inherits": ["ubuntu-x86_64"],
+      "displayName": "Ubuntu x86_64 CI build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_COMPILE_WARNING_AS_ERROR": false,
+        "ENABLE_CCACHE": true,
+        "BUILD_TESTING": "ON",
+        "VSP_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "linux-tests",
+      "displayName": "Linux unit tests (Qt only)",
+      "description": "Lightweight host build of unit tests without full OBS plugin deps",
+      "binaryDir": "${sourceDir}/build_tests",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "VSP_BUILD_TESTS": "ON",
+        "ENABLE_FRONTEND_API": "OFF",
+        "ENABLE_QT": "ON",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64",
+      "displayName": "Windows x64",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "displayName": "Windows x64 Release",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "displayName": "Windows x64 Debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-tests",
+      "configurePreset": "windows-tests",
+      "displayName": "Windows x64 Tests",
+      "configuration": "RelWithDebInfo",
+      "targets": ["vsp_tests"]
+    },
+    {
+      "name": "windows-ci-x64",
+      "configurePreset": "windows-ci-x64",
+      "displayName": "Windows x64 CI",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "ubuntu-x86_64",
+      "configurePreset": "ubuntu-x86_64",
+      "displayName": "Ubuntu x86_64",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "ubuntu-ci-x86_64",
+      "configurePreset": "ubuntu-ci-x86_64",
+      "displayName": "Ubuntu x86_64 CI",
+      "configuration": "RelWithDebInfo"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-tests",
+      "configurePreset": "windows-tests",
+      "output": {"outputOnFailure": true}
+    },
+    {
+      "name": "windows-ci-x64",
+      "configurePreset": "windows-ci-x64",
+      "output": {"outputOnFailure": true}
+    }
+  ]
+}

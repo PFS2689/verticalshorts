@@ -1,0 +1,24 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/vsp">
+    <file alias="platforms/youtube.svg">../data/icons/platforms/youtube.svg</file>
+    <file alias="platforms/twitch.svg">../data/icons/platforms/twitch.svg</file>
+    <file alias="platforms/tiktok.svg">../data/icons/platforms/tiktok.svg</file>
+    <file alias="platforms/tiktok-dark.svg">../data/icons/platforms/tiktok-dark.svg</file>
+    <file alias="platforms/instagram.svg">../data/icons/platforms/instagram.svg</file>
+    <file alias="platforms/instagram-dark.svg">../data/icons/platforms/instagram-dark.svg</file>
+    <file alias="platforms/custom-rtmp.svg">../data/icons/platforms/custom-rtmp.svg</file>
+    <file alias="platforms/placeholder.svg">../data/icons/platforms/placeholder.svg</file>
+    <!-- Legacy aliases kept for older references / tests -->
+    <file alias="icons/youtube.svg">../data/icons/platforms/youtube.svg</file>
+    <file alias="icons/twitch.svg">../data/icons/platforms/twitch.svg</file>
+    <file alias="icons/tiktok.svg">../data/icons/platforms/tiktok.svg</file>
+    <file alias="icons/instagram.svg">../data/icons/platforms/instagram.svg</file>
+    <file alias="icons/custom-rtmp.svg">../data/icons/platforms/custom-rtmp.svg</file>
+    <file alias="icons/youtube.png">../data/icons/youtube.png</file>
+    <file alias="icons/twitch.png">../data/icons/twitch.png</file>
+    <file alias="icons/tiktok.png">../data/icons/tiktok.png</file>
+    <file alias="icons/instagram.png">../data/icons/instagram.png</file>
+    <file alias="icons/custom-rtmp.png">../data/icons/custom-rtmp.png</file>
+  </qresource>
+</RCC>

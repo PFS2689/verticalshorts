@@ -1,0 +1,11 @@
+name: CI
+on:
+  push:
+    branches: [main, master, 'cursor/**']
+  pull_request:
+
+jobs:
+  windows:
+    name: Windows build
+    uses: ./.github/workflows/build-windows.yaml
+    secrets: inherit

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="Custom RTMP">
+  <rect x="2" y="4" width="20" height="16" rx="2" fill="#546E7A"/>
+  <circle cx="7" cy="12" r="2" fill="#ECEFF1"/>
+  <path d="M11 10h9v1.5H11zm0 2.5h7V14H11z" fill="#ECEFF1"/>
+</svg>
