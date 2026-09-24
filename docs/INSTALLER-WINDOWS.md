@@ -9,7 +9,7 @@ There is **no updater**, **no upgrade checker**, **no upgrade backup**, and
 ## Final installer name
 
 ```
-Vertical-Shorts-Plugin-1.0.9-Setup.exe
+Vertical-Shorts-Plugin-1.0.10-Setup.exe
 ```
 
 (Product name and version come from `buildspec.json`.)

@@ -1,6 +1,15 @@
 # Changelog — Vertical Shorts Plugin
 
-**Official product version: 1.0.9**
+**Official product version: 1.0.10**
+
+## 1.0.10
+
+- **Installer:** No upgrade prompt — Setup never asks Upgrade/Cancel
+  - Confirmed removal of `ConfirmUpgrade` / `TaskDialogMsgBox('Upgrade…')` / `IsUpgradeInstall` / upgrade-backup path
+  - Running Setup with an older build installed just replaces plugin files (normal install)
+  - Publish as GitHub Release so `/releases/latest` is no longer the old v1.0.5 Setup that still showed Upgrade
+- Installer filename: `Vertical-Shorts-Plugin-1.0.10-Setup.exe`
+- Stable AppId unchanged: `{D4336EAC-D873-4E6B-8575-07096987E0C8}`
 
 ## 1.0.9
 

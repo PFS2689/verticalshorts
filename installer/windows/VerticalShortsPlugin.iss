@@ -20,7 +20,7 @@
   #define MyAppName "Vertical Shorts Plugin"
 #endif
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.9"
+  #define MyAppVersion "1.0.10"
 #endif
 #ifndef MyAppPublisher
   #define MyAppPublisher "Vertical Shorts Plugin Contributors"
@@ -35,7 +35,7 @@
   #define OutputDir "..\..\release"
 #endif
 #ifndef OutputBaseFilename
-  #define OutputBaseFilename "Vertical-Shorts-Plugin-1.0.9-Setup"
+  #define OutputBaseFilename "Vertical-Shorts-Plugin-1.0.10-Setup"
 #endif
 
 #define MyAppIdGuid "D4336EAC-D873-4E6B-8575-07096987E0C8"
@@ -387,13 +387,13 @@ begin
       mbInformation, MB_OK);
   end;
 
+  { Never ask Upgrade/Cancel. Same AppId simply replaces plugin files. }
   if IsOBSRunning then begin
     AppendInstallLog('OBS is running at setup start');
     MsgBox(
       'OBS Studio is currently running.'#13#10#13#10 +
-      'You can continue, but close OBS before the file-copy step if an older ' +
-      'Vertical Shorts DLL is already installed, and restart OBS afterward ' +
-      'for the plugin to load.'#13#10#13#10 +
+      'Setup can continue. Close OBS before file copy if the plugin DLL is ' +
+      'locked, and restart OBS afterward for the plugin to load.'#13#10#13#10 +
       'Click OK to continue.',
       mbInformation, MB_OK);
   end;
