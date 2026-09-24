@@ -1,12 +1,15 @@
 # Windows installer (Inno Setup)
 
-Vertical Shorts Plugin ships a **standard Inno Setup 6** installer with a permanent
-in-place upgrade identity, hardened for clean-machine OBS installs.
+Vertical Shorts Plugin ships a **standard Inno Setup 6** clean installer that
+copies the plugin into an existing OBS Studio 32 (x64) installation.
+
+There is **no updater**, **no upgrade checker**, **no upgrade backup**, and
+**no AppUpdatesURL**. Setup only installs the current plugin files.
 
 ## Final installer name
 
 ```
-Vertical-Shorts-Plugin-1.0.8-Setup.exe
+Vertical-Shorts-Plugin-1.0.9-Setup.exe
 ```
 
 (Product name and version come from `buildspec.json`.)
@@ -48,9 +51,7 @@ The Visual C++ runtime is provided by OBS Studio itself.
 Vertical Shorts requires **OBS Studio 32.0+ (x64)**.
 
 The Windows build compiles against OBS 32.2.1 headers, but `obs_module_ver()`
-advertises **API 32.0.0** so OBS 32.0 and 32.1 will load the module. OBS rejects
-plugins that advertise a newer major.minor than the host (that was the 1.0.6
-"Plugin Load Error" on older 32.x installs).
+advertises **API 32.0.0** so OBS 32.0 and 32.1 will load the module.
 
 ## Install log
 
@@ -60,41 +61,33 @@ Every Setup run writes:
 %LOCALAPPDATA%\VerticalShortsPlugin\logs\install-YYYYMMDD_HHMMSS.log
 ```
 
-The log includes installer version, detected OBS path, architecture, destination
-paths, OBS-running / DLL-lock waits, copy/verify results, and Windows error
-codes. It never records stream keys, credentials, or passwords.
+The log never records stream keys, credentials, or passwords.
 
 ## OBS detection
 
 Before the wizard starts, Setup looks for a valid OBS root
 (`bin\64bit\obs64.exe` + `obs-plugins\64bit` + `data\obs-plugins`) via:
 
-1. Previous Vertical Shorts uninstall `InstallLocation` (if it is a valid OBS root)
-2. `HKLM\Software\OBS Studio`
-3. OBS Studio uninstall `InstallLocation`
-4. `{autopf}\obs-studio` / `{pf}\obs-studio` / `C:\Program Files\obs-studio`
+1. `HKLM\Software\OBS Studio`
+2. OBS Studio uninstall `InstallLocation`
+3. `{autopf}\obs-studio` / `{pf}\obs-studio` / `C:\Program Files\obs-studio`
 
 If OBS is not found, the directory page lets the user browse manually.
 
 ## Locked DLL / OBS running
 
-If OBS is running or `obs-shorts-vertical.dll` is locked, Setup shows Retry/Cancel
-and **does not force-kill OBS**. File copy proceeds only after the DLL can be
-opened exclusively.
+If an existing `obs-shorts-vertical.dll` is locked (OBS running), Setup shows
+Retry/Cancel and **does not force-kill OBS**.
 
-## In-place reinstall
+## Uninstall
 
-Running Setup.exe when Vertical Shorts is already installed:
+Uninstall removes only:
 
-1. Detects the previous install location (uninstall registry + known DLL paths)
-2. Requires OBS Studio to be closed / DLL unlocked (Retry loop)
-3. Replaces plugin binaries/resources under the OBS tree
-4. Removes obsolete Vertical Shorts copies from known legacy paths only
-5. Preserves user configuration (scene collection + Credential Manager)
-6. Verifies DLL + locale data after install
+- `{app}\obs-plugins\64bit\obs-shorts-vertical.dll`
+- `{app}\data\obs-plugins\obs-shorts-vertical\`
 
-There is **no in-app updater** and no upgrade-confirmation dialog — Setup simply
-installs/replaces plugin files. User OBS scenes and credentials are never deleted.
+OBS core files, unrelated plugins, scene collections, and Credential Manager
+secrets are never deleted.
 
 ## Build order (required)
 
@@ -102,7 +95,8 @@ installs/replaces plugin files. User OBS scenes and credentials are never delete
 2. Verify `obs-shorts-vertical.dll` + locale + `INSTALL.txt`
 3. Stage payload under `release/staging/obs-shorts-vertical/` (includes `install-meta.ini`)
 4. Compile `installer/windows/VerticalShortsPlugin.iss` with **ISCC.exe**
-5. Scan / sign / publish the resulting Setup.exe
+5. Scan Setup.exe for removed upgrade-system markers; refuse to package if found
+6. Scan / sign / publish the resulting Setup.exe
 
 ## Local packaging (Windows)
 

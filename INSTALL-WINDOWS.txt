@@ -1,4 +1,4 @@
-Vertical Shorts Plugin for OBS Studio — Windows Install (v1.0.8)
+Vertical Shorts Plugin for OBS Studio — Windows Install (v1.0.9)
 ===============================================================
 
 Professional Vertical Streaming Plugin for OBS Studio.
@@ -6,17 +6,17 @@ Professional Vertical Streaming Plugin for OBS Studio.
 Downloads (ClamAV + Windows Defender scanned before each GitHub release is published):
 
   Setup.exe (recommended):
-    https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.8-Setup.exe
+    https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.9-Setup.exe
 
   Manual zip:
-    https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.8.zip
+    https://github.com/PFS2689/verticalshorts/releases/latest/download/Vertical-Shorts-Plugin-1.0.9.zip
 
   Checksums:
     https://github.com/PFS2689/verticalshorts/releases/latest/download/SHA256SUMS.txt
 
 About the Setup.exe
 -------------------
-This is a standard Inno Setup 6 installer. It installs into your OBS Studio
+This is a standard Inno Setup 6 clean installer. It installs into your OBS Studio
 folder (default C:\Program Files\obs-studio):
 
   <OBS>\obs-plugins\64bit\obs-shorts-vertical.dll
@@ -25,16 +25,19 @@ folder (default C:\Program Files\obs-studio):
 Administrator rights (UAC) are required. Setup detects OBS automatically; if
 OBS is not found you can browse to the folder that contains bin\64bit\obs64.exe.
 
+There is NO in-app updater and NO installer upgrade/update system. Setup only
+copies the current plugin files into OBS.
+
 Requires OBS Studio 32.0 or newer (64-bit). Vertical Shorts 1.0.6 could show
 "Plugin Load Error" on OBS 32.0/32.1 because it advertised module API 32.2;
-1.0.8 fixes that. If the plugin still fails to load, open:
+1.0.7+ fixes that. If the plugin still fails to load, open:
   Help → Log Files → View Current Log
 and look for lines containing [obs-shorts-vertical] or
 "incompatible version" / "Module '...' not loaded".
 
 Local filename (exact):
 
-  Vertical-Shorts-Plugin-1.0.8-Setup.exe
+  Vertical-Shorts-Plugin-1.0.9-Setup.exe
 
 Install log (written on every run):
 
@@ -43,7 +46,7 @@ Install log (written on every run):
 Authenticode:
   When signing credentials are configured in CI, production releases are
   Authenticode-signed. Verify with:
-    Get-AuthenticodeSignature "Vertical-Shorts-Plugin-1.0.8-Setup.exe"
+    Get-AuthenticodeSignature "Vertical-Shorts-Plugin-1.0.9-Setup.exe"
   Status should be Valid when signed.
 
 Do NOT disable Windows Defender.
@@ -51,28 +54,13 @@ Do NOT disable Windows Defender.
 Requirements
 ------------
 - Windows 10/11 64-bit
-- OBS Studio 32.2.1 (built and tested against 32.2.1)
+- OBS Studio 32.0+ (built and tested against 32.2.1)
 - No Visual Studio / CMake / Git required on the target PC
-
-Upgrading from a previous version
----------------------------------
-You do not need to uninstall first.
-
-1. Download the newer "Vertical-Shorts-Plugin-<version>-Setup.exe".
-2. Run it. If an older build is present, Setup replaces the plugin files (OBS scenes/settings are preserved).
-3. If OBS is open (or the plugin DLL is locked), close OBS and click Retry.
-   Setup will not replace the plugin DLL while OBS has it loaded, and will
-   not force-kill OBS.
-4. Finish the wizard. Your destinations, credentials, vertical scenes/sources,
-   schedules, and other settings are preserved. No computer restart is required.
-
-The AppId stays the same across every Vertical Shorts Plugin version so Windows
-recognizes reinstalls of the same product (stable AppId). There is no in-app updater.
 
 Install with Setup.exe (recommended)
 ------------------------------------
 1. Close OBS Studio completely.
-2. Run "Vertical-Shorts-Plugin-1.0.8-Setup.exe", approve UAC, confirm the OBS
+2. Run "Vertical-Shorts-Plugin-1.0.9-Setup.exe", approve UAC, confirm the OBS
    folder (usually C:\Program Files\obs-studio), and finish the wizard.
 3. Start OBS Studio.
 4. If OBS shows Tools → Plugin Manager, ensure "Vertical Shorts Plugin" is enabled,
@@ -82,6 +70,12 @@ Install with Setup.exe (recommended)
 6. Confirm the main OBS canvas remains unchanged while editing the separate vertical composition.
 7. Test Vertical Go Live, Vertical Record, Short Clip, Long Clip, and Settings.
 8. Confirm output files save to the selected vertical recording path.
+
+Reinstalling a newer build
+--------------------------
+Close OBS, run the new Setup.exe, and finish the wizard. Setup replaces this
+plugin's files under the OBS folder. Your OBS scenes and Credential Manager
+secrets are left intact. There is no separate upgrade helper.
 
 Install from zip
 ----------------
@@ -111,4 +105,6 @@ Troubleshooting
 Uninstall
 ---------
 Use Windows Apps & features → Vertical Shorts Plugin.
+Only this plugin's DLL and data folder are removed.
 Your OBS scene collections and Credential Manager secrets are left intact.
+OBS core files are never deleted.

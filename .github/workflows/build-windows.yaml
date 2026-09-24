@@ -288,13 +288,26 @@ jobs:
           $len = (Get-Item $setup).Length
           if ($len -lt 50000) { throw "Installer unexpectedly small: $len bytes" }
           Write-Host "OK Inno Setup installer: $setup ($len bytes)"
-          # Confirm Inno marker present
           $bytes = [System.IO.File]::ReadAllBytes($setup)
           $text = [System.Text.Encoding]::ASCII.GetString($bytes)
           if ($text -notmatch 'Inno Setup') {
             throw 'Output EXE does not look like an Inno Setup installer'
           }
           Write-Host 'Inno Setup signature string found in installer'
+          # Required payload markers
+          foreach ($need in @('obs-shorts-vertical.dll', 'en-US.ini', 'obs-plugins')) {
+            if ($text -notmatch [regex]::Escape($need)) {
+              throw "Setup.exe missing expected payload marker: $need"
+            }
+          }
+          Write-Host 'Setup.exe contains required plugin payload markers'
+          # Forbidden leftover upgrade/updater markers from the removed upgrade system
+          foreach ($bad in @('ConfirmUpgrade', 'CreateUpgradeBackup', 'GIsUpgrade', 'IsUpgradeInstall', 'upgrade-backups', 'updater.exe')) {
+            if ($text.Contains($bad)) {
+              throw "Setup.exe still contains forbidden updater/upgrade marker: $bad"
+            }
+          }
+          Write-Host 'Setup.exe updater/upgrade remnant scan passed'
 
       - name: Sign Setup.exe (Azure Artifact Signing)
         if: github.ref_type == 'tag' && steps.creds.outputs.has_azure == 'true'

@@ -1,6 +1,16 @@
 # Changelog — Vertical Shorts Plugin
 
-**Official product version: 1.0.8**
+**Official product version: 1.0.9**
+
+## 1.0.9
+
+- **Installer:** Rewrote Inno Setup as a clean install-only script
+  - Completely removed remaining upgrade/updater flow (previous-version detection, reinstall-mode branching, upgrade messaging, Start Menu install-log shortcut, AppUpdatesURL)
+  - Installs current plugin files into OBS 32 (`obs-plugins\64bit` + `data\obs-plugins\obs-shorts-vertical`) with no upgrade helper
+  - Packaging refuses Setup.exe if upgrade-system markers (`ConfirmUpgrade`, `CreateUpgradeBackup`, `GIsUpgrade`, `updater.exe`, etc.) are present
+- Installer filename: `Vertical-Shorts-Plugin-1.0.9-Setup.exe`
+- Stable AppId unchanged: `{D4336EAC-D873-4E6B-8575-07096987E0C8}`
+- Multi-canvas camera work from 1.0.8 is unchanged
 
 ## 1.0.8
 
